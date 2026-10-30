@@ -196,6 +196,15 @@
   .g-group .count { font-weight: 400; color: var(--muted); font-size: 12px; }
   .g-span { position: absolute; top: 11px; height: 8px; border-radius: 4px; opacity: .35; }
   .g-group:hover .g-label { color: var(--accent); }
+  .g-corner.small { font-size: 12px; color: var(--muted); display: flex; align-items: center; }
+  .g-hols { position: relative; height: 22px; border-bottom: 1px solid var(--border); }
+  .g-holname {
+    position: absolute; top: 3px; height: 16px; padding: 0 4px; border-radius: 3px; z-index: 1;
+    font-size: 11px; line-height: 14px; text-align: center; white-space: nowrap;
+    background: var(--hol); border: 1px solid var(--hol-legend); color: var(--hol-text);
+  }
+  .hol-note { font-size: 13px; color: var(--muted); margin: 10px 0 0; line-height: 1.8; }
+  .hol-note b { color: var(--hol-text); font-weight: 600; }
   .note { font-size: 12px; color: var(--muted); margin-top: 2px; white-space: nowrap; cursor: help; }
   .note.warn { color: var(--s-late); }
   .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--muted); margin-top: 10px; }
@@ -281,6 +290,7 @@
       <span style="--c:var(--hol-legend)">國定假日</span>
       <span style="--c:var(--today)">今天</span>
     </div>
+    <p class="hol-note" id="holNote"></p>
   </section>
 </main>
 
@@ -542,6 +552,8 @@ const WEEKDAY = '日一二三四五六';
 function renderGantt() {
   const el = document.getElementById('gantt');
   const ts = state.tasks;
+  const holNote = document.getElementById('holNote');
+  holNote.innerHTML = '';
   if (!ts.length) { el.innerHTML = '<div class="empty">沒有資料</div>'; return; }
   const min = Math.min(...ts.map(t => t._s));
   const max = Math.max(...ts.map(t => t._f));
@@ -565,6 +577,27 @@ function renderGantt() {
     return `<div class="g-month" style="left:${m.i * DAY_W}px;width:${(end - m.i) * DAY_W}px">${m.label}</div>`;
   }).join('');
 
+  // Holiday name labels: back-to-back holidays (weekends in between allowed) share one label.
+  const holRuns = [];
+  days.forEach((k, i) => {
+    if (k.kind !== 'hol') return;
+    const base = k.hol.replace(/（.*?）/g, '');
+    const last = holRuns[holRuns.length - 1];
+    if (last && days.slice(last.j + 1, i).every(d => d.kind === 'we')) {
+      last.j = i;
+      if (!last.names.includes(base)) last.names.push(base);
+    } else holRuns.push({ names: [base], i, j: i });
+  });
+  const holHtml = holRuns.map(r => {
+    const span = `${fmt(days[r.i].t)}${r.j > r.i ? ' → ' + fmt(days[r.j].t) : ''}`;
+    return `<div class="g-holname" style="left:${r.i * DAY_W}px;min-width:${(r.j - r.i + 1) * DAY_W}px" title="${r.names.join('・')}：${span}">${r.names.join('・')}</div>`;
+  }).join('');
+  const holList = days.filter(k => k.kind === 'hol');
+  if (holList.length) {
+    holNote.innerHTML = `專案期間的國定假日（${holList.length} 天平日放假）：` +
+      holList.map(k => `<b>${fmt(k.t).replace(/-/g, '/')}（${WEEKDAY[k.d.getUTCDay()]}）</b>${k.hol}`).join('、');
+  }
+
   const dayTitle = k => `${fmt(k.t)}（${WEEKDAY[k.d.getUTCDay()]}）${k.hol ? ' ' + k.hol : ''}`;
   const dayHtml = days.map(k =>
     `<div class="g-day ${k.kind}${k.t === today ? ' today' : ''}" title="${dayTitle(k)}"><b>${k.d.getUTCDate()}</b>${WEEKDAY[k.d.getUTCDay()]}</div>`).join('');
@@ -577,6 +610,7 @@ function renderGantt() {
   el.innerHTML = `
     <div class="g-head"><div class="g-corner"></div><div class="g-months" style="width:${w}px">${monthHtml}</div></div>
     <div class="g-head"><div class="g-corner"></div><div class="g-days">${dayHtml}</div></div>
+    ${holRuns.length ? `<div class="g-head"><div class="g-corner small">國定假日</div><div class="g-hols" style="width:${w}px">${holHtml}</div></div>` : ''}
     <div class="g-body">
       <div class="g-cols" style="width:${w}px">${colHtml}${todayLine}</div>
       ${ts.map((t, i) => {
