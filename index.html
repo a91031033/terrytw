@@ -21,6 +21,8 @@
     --s-done: #1a7f37;
     --s-late: #d1242f;
     --input-bg: #ffffff;
+    --hol: rgba(191, 135, 0, .16);
+    --hol-legend: rgba(191, 135, 0, .5);
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -39,6 +41,8 @@
       --s-done: #3fb950;
       --s-late: #ff6b6b;
       --input-bg: #0d1117;
+    --hol: rgba(210, 153, 34, .2);
+    --hol-legend: rgba(210, 153, 34, .55);
     }
   }
   :root[data-theme="dark"] {
@@ -57,6 +61,8 @@
     --s-done: #3fb950;
     --s-late: #ff6b6b;
     --input-bg: #0d1117;
+    --hol: rgba(210, 153, 34, .2);
+    --hol-legend: rgba(210, 153, 34, .55);
   }
 
   * { box-sizing: border-box; }
@@ -123,6 +129,9 @@
     color: #fff; font-size: 11px; line-height: 18px; padding: 0 6px; white-space: nowrap; overflow: hidden;
   }
   .g-grid { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--grid); }
+  .g-hol { position: absolute; top: 0; bottom: 0; min-width: 2px; background: var(--hol); pointer-events: auto; }
+  .note { font-size: 12px; color: var(--muted); margin-top: 2px; white-space: nowrap; cursor: help; }
+  .note.warn { color: var(--s-late); }
   .g-today { position: absolute; top: 0; bottom: 0; border-left: 2px dashed var(--today); z-index: 2; }
   .g-body { position: relative; }
   .g-lines { position: absolute; top: 0; bottom: 0; left: 160px; right: 0; pointer-events: none; }
@@ -155,7 +164,8 @@
   <section class="panel" style="margin-top:16px">
     <h2>階段列表</h2>
     <div class="options">
-      <label><input type="checkbox" id="skipWeekends"> 工期只算工作天（跳過週六、日）</label>
+      <label><input type="checkbox" id="skipWeekends"> 工期只算工作天（跳過週六、日與國定假日）</label>
+      <span>國定假日依人事行政總處 2026、2027 年辦公日曆表</span>
     </div>
     <div class="table-wrap">
       <table>
@@ -187,6 +197,7 @@
       <span style="--c:var(--s-doing)">進行中</span>
       <span style="--c:var(--s-done)">已完成</span>
       <span style="--c:var(--s-late)">已逾期</span>
+      <span style="--c:var(--hol-legend)">國定假日（平日）</span>
       <span style="--c:var(--today)">今天</span>
     </div>
   </section>
@@ -203,13 +214,49 @@ const fmt = t => new Date(t).toISOString().slice(0, 10);
 const isWeekend = t => { const w = new Date(t).getUTCDay(); return w === 0 || w === 6; };
 const todayUTC = () => { const n = new Date(); return Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()); };
 
-function toWorkday(t) { while (isWeekend(t)) t += DAY; return t; }
+// 行政院人事行政總處「政府行政機關辦公日曆表」115 年（2026）、116 年（2027）。
+// 只列週一至週五的放假日（含補假）；這兩年都沒有補班日。
+const HOLIDAYS = {
+  '2026-01-01': '開國紀念日',
+  '2026-02-16': '春節（除夕）', '2026-02-17': '春節', '2026-02-18': '春節', '2026-02-19': '春節', '2026-02-20': '春節（補假）',
+  '2026-02-27': '和平紀念日（補假）',
+  '2026-04-03': '兒童節（補假）', '2026-04-06': '清明節（補假）',
+  '2026-05-01': '勞動節',
+  '2026-06-19': '端午節',
+  '2026-09-25': '中秋節', '2026-09-28': '教師節',
+  '2026-10-09': '國慶日（補假）',
+  '2026-10-26': '臺灣光復節（補假）',
+  '2026-12-25': '行憲紀念日',
+  '2027-01-01': '開國紀念日',
+  '2027-02-04': '春節（小年夜）', '2027-02-05': '春節（除夕）', '2027-02-08': '春節', '2027-02-09': '春節（補假）', '2027-02-10': '春節（補假）',
+  '2027-03-01': '和平紀念日（補假）',
+  '2027-04-05': '清明節', '2027-04-06': '兒童節（補假）',
+  '2027-04-30': '勞動節（補假）',
+  '2027-06-09': '端午節',
+  '2027-09-15': '中秋節', '2027-09-28': '教師節',
+  '2027-10-11': '國慶日（補假）',
+  '2027-10-25': '臺灣光復節',
+  '2027-12-24': '行憲紀念日（補假）',
+  '2027-12-31': '開國紀念日（補假）',
+};
+const HOLIDAY_YEARS = [2026, 2027];
+const holidayOf = t => HOLIDAYS[fmt(t)];
+const isOff = t => isWeekend(t) || !!holidayOf(t);
+
+// Weekday holidays between two dates, inclusive.
+function holidaysIn(start, finish) {
+  const out = [];
+  for (let t = start; t <= finish; t += DAY) if (!isWeekend(t) && holidayOf(t)) out.push(`${fmt(t)} ${holidayOf(t)}`);
+  return out;
+}
+
+function toWorkday(t) { while (isOff(t)) t += DAY; return t; }
 
 // Finish date of a stage that starts on `start` and lasts `dur` days (inclusive).
 function finishOf(start, dur, skip) {
   if (!skip) return start + (dur - 1) * DAY;
   let t = toWorkday(start), n = 1;
-  while (n < dur) { t += DAY; if (!isWeekend(t)) n++; }
+  while (n < dur) { t += DAY; if (!isOff(t)) n++; }
   return t;
 }
 
@@ -218,7 +265,7 @@ function durationOf(start, finish, skip) {
   if (finish < start) return 1;
   if (!skip) return Math.round((finish - start) / DAY) + 1;
   let n = 0;
-  for (let t = start; t <= finish; t += DAY) if (!isWeekend(t)) n++;
+  for (let t = start; t <= finish; t += DAY) if (!isOff(t)) n++;
   return Math.max(1, n);
 }
 
@@ -294,7 +341,7 @@ function renderTable() {
       <td><input data-f="name" value="${esc(t.name)}" placeholder="階段名稱"></td>
       <td><input data-f="start" type="date" value="${t.start}" ${t.auto && i > 0 ? 'disabled title="已設定接續上一階段"' : ''}></td>
       <td><input data-f="duration" type="number" min="1" step="1" value="${t.duration}"></td>
-      <td><input data-f="finish" type="date" value="${t.finish}"></td>
+      <td><input data-f="finish" type="date" value="${t.finish}">${holidayNote(t)}</td>
       <td class="auto"><input data-f="auto" type="checkbox" ${t.auto ? 'checked' : ''} ${i === 0 ? 'disabled title="第一個階段沒有上一階段"' : ''}></td>
       <td><input data-f="owner" value="${esc(t.owner || '')}" placeholder="負責人"></td>
       <td><select data-f="status">${Object.entries(STATUS).map(([k, v]) => `<option value="${k}" ${t.status === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
@@ -305,6 +352,19 @@ function renderTable() {
         <button data-a="del" title="刪除">✕</button>
       </td>
     </tr>`).join('');
+}
+
+function holidayNote(t) {
+  const hs = holidaysIn(t._s, t._f);
+  const outside = [t._s, t._f].some(x => !HOLIDAY_YEARS.includes(new Date(x).getUTCFullYear()));
+  let html = '';
+  if (hs.length) {
+    html += state.skipWeekends
+      ? `<div class="note" title="${esc(hs.join('\n'))}">已避開 ${hs.length} 天國定假日</div>`
+      : `<div class="note warn" title="${esc(hs.join('\n'))}">⚠ 含 ${hs.length} 天國定假日</div>`;
+  }
+  if (outside) html += '<div class="note">超出 2026–2027，未含該年假日</div>';
+  return html;
 }
 
 function renderStats() {
@@ -348,13 +408,16 @@ function renderGantt() {
     m = next;
   }
 
+  const hols = Object.keys(HOLIDAYS).map(parse).filter(h => h >= min && h < max);
+  const holBands = hols.map(h => `<div class="g-hol" style="left:${pct(h)};width:${(DAY / span * 100).toFixed(3)}%" title="${fmt(h)} ${HOLIDAYS[fmt(h)]}"></div>`).join('');
+
   const today = todayUTC();
   const todayLine = today >= min && today < max ? `<div class="g-today" style="left:${pct(today)}" title="今天 ${fmt(today)}"></div>` : '';
 
   el.innerHTML = `
     <div class="g-head">${marks.map(k => `<div class="g-month" style="left:${k.left};width:${k.width}">${k.label}</div>`).join('')}</div>
     <div class="g-body">
-      <div class="g-lines">${marks.filter(k => k.line).map(k => `<div class="g-grid" style="left:${k.left}"></div>`).join('')}${todayLine}</div>
+      <div class="g-lines">${marks.filter(k => k.line).map(k => `<div class="g-grid" style="left:${k.left}"></div>`).join('')}${holBands}${todayLine}</div>
       ${ts.map(t => {
         const st = effectiveStatus(t);
         const days = Math.round((t._f - t._s) / DAY) + 1;
