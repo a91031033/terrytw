@@ -262,6 +262,7 @@
     <input id="projectName" aria-label="專案名稱" value="我的專案">
     <div class="toolbar">
       <button id="exportCsv">匯出 CSV（Excel）</button>
+      <button id="exportHtml" title="匯出一個唯讀的網頁檔，可以直接用瀏覽器打開或寄給別人">匯出 HTML</button>
       <button id="exportJson">備份 JSON</button>
       <label class="btn">匯入 JSON<input id="importJson" type="file" accept=".json,application/json" hidden></label>
       <button id="print">列印</button>
@@ -1057,6 +1058,51 @@ document.getElementById('exportCsv').onclick = () => {
   state.tasks.forEach((t, i) => lines.push([i + 1, t.name, t.start, t.duration, t.finish, isMilestone(t) ? '◆' : '', t.owner || '', STATUS[t.status]].map(q).join(',')));
   // BOM so Excel opens the Chinese text correctly.
   download(exportName('csv'), '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
+};
+
+// Read-only snapshot of the page as currently shown: form fields become plain text, scripts and editing controls are removed.
+document.getElementById('exportHtml').onclick = () => {
+  const src = document.documentElement;
+  const doc = src.cloneNode(true);
+  const fields = 'input:not([type="file"]), select';
+  const from = [...src.querySelectorAll(fields)], to = [...doc.querySelectorAll(fields)];
+  to.forEach((el, i) => {
+    const f = from[i];
+    const span = document.createElement('span');
+    span.className = 'ro';
+    if (f.type === 'checkbox') span.textContent = f.checked ? '✓' : '';
+    else if (f.tagName === 'SELECT') span.textContent = f.selectedOptions[0]?.text || '';
+    else span.textContent = f.value;
+    if (f.type === 'checkbox' || f.type === 'number') span.classList.add('center');
+    el.replaceWith(span);
+  });
+  doc.querySelectorAll('script, #stageMenu, header .toolbar, .lock-btn, #exportLeave, #importLeaveBtn, #foldAll, #unfoldAll, #copyMilestones, #addRow, #addLeave, .hint, td.actions, th.actions, .g-group .caret')
+    .forEach(el => el.remove());
+  doc.querySelectorAll('.options label').forEach(el => { el.textContent = `工期${state.skipWeekends ? '只算工作天（跳過週六、日與國定假日）' : '以日曆天計算'}`; });
+  doc.querySelectorAll('.g-group').forEach(el => { el.style.cursor = 'default'; el.removeAttribute('title'); });
+
+  // Project name as the heading, plus when this snapshot was taken.
+  const h1 = document.createElement('h1');
+  h1.className = 'snap-title';
+  h1.textContent = state.name;
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  const meta = document.createElement('p');
+  meta.className = 'snap-meta';
+  meta.textContent = `匯出時間：${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}（唯讀檔案，修改請用專案計畫表）`;
+  const header = doc.querySelector('header');
+  header.replaceChildren(h1, meta);
+  doc.querySelector('title').textContent = `${state.name} 專案計畫`;
+  const style = document.createElement('style');
+  style.textContent = `
+    header { display: block; }
+    .snap-title { font-size: 24px; margin: 0 0 4px; }
+    .snap-meta { color: var(--muted); font-size: 13px; margin: 0; }
+    .ro { display: block; padding: 5px 6px; font-size: 14px; white-space: nowrap; }
+    .ro.center { text-align: center; }
+    .members .ro { display: inline-block; padding: 0 10px 0 0; }
+    tbody tr:hover { background: var(--tint, transparent); }`;
+  doc.querySelector('head').appendChild(style);
+  download(exportName('html'), '<!doctype html>\n' + doc.outerHTML, 'text/html;charset=utf-8');
 };
 
 document.getElementById('exportJson').onclick = () => {
