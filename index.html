@@ -170,6 +170,17 @@
   .ms-item.done { opacity: .55; }
   .ms-item.late .ms-when { color: var(--s-late); }
   .ms-item.next { background: var(--row-hover); }
+  td input[data-f="name"] {
+    padding-right: 22px; cursor: pointer;
+    background: var(--input-bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238c959f'/%3E%3C/svg%3E") no-repeat right 8px center;
+  }
+  #stageMenu {
+    position: absolute; z-index: 50; list-style: none; margin: 0; padding: 4px 0; max-height: 300px; overflow-y: auto;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, .18); font-size: 14px;
+  }
+  #stageMenu li { padding: 6px 12px; cursor: pointer; white-space: nowrap; }
+  #stageMenu li:hover, #stageMenu li.active { background: var(--row-hover); }
+  #stageMenu li.cur { font-weight: 600; color: var(--accent); }
   .note { font-size: 12px; color: var(--muted); margin-top: 2px; white-space: nowrap; cursor: help; }
   .note.warn { color: var(--s-late); }
   .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--muted); margin-top: 10px; }
@@ -222,6 +233,7 @@
             <th>開始日期</th>
             <th>工期（天）</th>
             <th>完成日期</th>
+            <th title="勾選後會列在上方的里程碑清單，日期以完成日期為準">里程碑</th>
             <th title="勾選後，開始日期自動接在上一階段完成之後">接續</th>
             <th>負責人</th>
             <th>狀態</th>
@@ -230,7 +242,6 @@
         </thead>
         <tbody id="rows"></tbody>
       </table>
-      <datalist id="stageNames"></datalist>
     </div>
     <div style="margin-top:12px"><button class="primary" id="addRow">＋ 新增階段</button></div>
     <p class="hint">修改「工期」會自動算出完成日期；修改「完成日期」會自動算出工期。勾選「接續」的階段，開始日期會自動排在上一階段完成的隔天。資料自動儲存在這台電腦的瀏覽器裡。</p>
@@ -244,7 +255,7 @@
       <span class="ms-legend">▶ 進行中</span>
       <span class="ms-legend">✓ 已完成（變淡）</span>
       <span class="ms-legend">⚠ 已逾期（紅框）</span>
-      <span class="ms-legend">◆ 里程碑（1 天）</span>
+      <span class="ms-legend">◆ 里程碑</span>
       <span style="--c:var(--we)">週末</span>
       <span style="--c:var(--hol-legend)">國定假日</span>
       <span style="--c:var(--today)">今天</span>
@@ -260,8 +271,8 @@ const COMMON_STAGES = [
   'EVT2 layout', 'EVT2 GBO', 'EVT2 PCB Fab', 'EVT2 SMT', 'EVT2 MFG', 'EVT2 PCBA Ready', 'EVT2 Validation', 'C2 Close', 'EVT2 LAB pre-test',
   'DVT Schematic', 'DVT layout', 'DVT GBO', 'DVT PCB Fab', 'DVT SMT', 'DVT MFG', 'DVT PCBA Ready', 'DVT Validation', 'C3 Close', 'DVT LAB pre-test',
 ];
-// A 1-day stage is shown as a milestone.
-const isMilestone = t => t.duration === 1;
+// A stage is a milestone when ticked in the table; until then, 1-day stages and "… Close" stages are.
+const isMilestone = t => t.milestone ?? (t.duration === 1 || /\bclose\b/i.test(t.name || ''));
 // Vivid colours for stage groups (white text stays readable on all of them).
 const GROUP_COLORS = ['#2f6fde', '#e8590c', '#2b8a3e', '#9c36b5', '#0c8599', '#d6336c', '#f08c00', '#5f3dc4'];
 const firstWord = n => (n || '').trim().split(/\s+/)[0];
@@ -410,16 +421,17 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;'
 function renderTable() {
   const tbody = document.getElementById('rows');
   if (!state.tasks.length) {
-    tbody.innerHTML = '<tr><td colspan="9" class="empty">還沒有階段，按「新增階段」開始。</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" class="empty">還沒有階段，按「新增階段」開始。</td></tr>';
     return;
   }
   tbody.innerHTML = state.tasks.map((t, i) => `
     <tr data-id="${t.id}" style="--gc:${t._c}" title="群組：${esc(t._g)}">
-      <td class="num">${i + 1}${isMilestone(t) ? `<span class="ms" style="color:${t._c}" title="里程碑（工期 1 天）">◆</span>` : ''}</td>
-      <td><input data-f="name" list="stageNames" value="${esc(t.name)}" placeholder="選擇或輸入階段"></td>
+      <td class="num">${i + 1}${isMilestone(t) ? `<span class="ms" style="color:${t._c}" title="里程碑">◆</span>` : ''}</td>
+      <td><input data-f="name" value="${esc(t.name)}" placeholder="選擇或輸入階段" autocomplete="off"></td>
       <td><input data-f="start" type="date" value="${t.start}" ${t.auto && i > 0 ? 'disabled title="已設定接續上一階段"' : ''}></td>
       <td><input data-f="duration" type="number" min="1" step="1" value="${t.duration}"></td>
       <td><input data-f="finish" type="date" value="${t.finish}">${holidayNote(t)}</td>
+      <td class="auto"><input data-f="milestone" type="checkbox" ${isMilestone(t) ? 'checked' : ''}></td>
       <td class="auto"><input data-f="auto" type="checkbox" ${t.auto ? 'checked' : ''} ${i === 0 ? 'disabled title="第一個階段沒有上一階段"' : ''}></td>
       <td><input data-f="owner" value="${esc(t.owner || '')}" placeholder="負責人"></td>
       <td><select data-f="status">${Object.entries(STATUS).map(([k, v]) => `<option value="${k}" ${t.status === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
@@ -432,10 +444,7 @@ function renderTable() {
     </tr>`).join('');
 }
 
-function renderStageList() {
-  const names = [...new Set([...COMMON_STAGES, ...state.tasks.map(t => t.name).filter(Boolean)])];
-  document.getElementById('stageNames').innerHTML = names.map(n => `<option value="${esc(n)}">`).join('');
-}
+const stageNames = () => [...new Set([...COMMON_STAGES, ...state.tasks.map(t => t.name).filter(Boolean)])];
 
 function holidayNote(t) {
   const hs = holidaysIn(t._s, t._f);
@@ -452,7 +461,7 @@ function holidayNote(t) {
 
 function milestoneWhen(t) {
   if (t.status === 'done') return '已完成';
-  const d = Math.round((t._s - todayUTC()) / DAY);
+  const d = Math.round((t._f - todayUTC()) / DAY);
   if (d === 0) return '今天';
   return d > 0 ? `還有 ${d} 天` : `已過 ${-d} 天，尚未完成`;
 }
@@ -462,13 +471,13 @@ const dateWithDay = t => `${fmt(t)}（${WEEKDAY[new Date(t).getUTCDay()]}）`;
 function renderMilestones() {
   const ms = state.tasks.filter(isMilestone);
   const el = document.getElementById('milestones');
-  if (!ms.length) { el.innerHTML = '<li class="empty">還沒有里程碑。工期設為 1 天的階段會自動列在這裡。</li>'; return; }
-  const next = ms.find(t => t.status !== 'done' && t._s >= todayUTC());
+  if (!ms.length) { el.innerHTML = '<li class="empty">還沒有里程碑。在階段列表勾選「里程碑」就會列在這裡。</li>'; return; }
+  const next = ms.find(t => t.status !== 'done' && t._f >= todayUTC());
   el.innerHTML = ms.map(t => {
     const cls = t.status === 'done' ? 'done' : effectiveStatus(t) === 'late' ? 'late' : t === next ? 'next' : '';
     return `<li class="ms-item ${cls}" style="--gc:${t._c}" title="群組：${esc(t._g)}">
       <div class="ms-name">${esc(t.name || '（未命名）')}</div>
-      <div class="ms-date">${dateWithDay(t._s)}</div>
+      <div class="ms-date">${dateWithDay(t._f)}</div>
       <div class="ms-when">${t === next ? '下一個・' : ''}${milestoneWhen(t)}${t.owner ? '・' + esc(t.owner) : ''}</div>
     </li>`;
   }).join('');
@@ -477,7 +486,7 @@ function renderMilestones() {
 function milestoneText() {
   const lines = [`${state.name} 里程碑`];
   state.tasks.filter(isMilestone).forEach(t =>
-    lines.push(`◆ ${dateWithDay(t._s)} ${t.name}${t.owner ? `（${t.owner}）` : ''}${t.status === 'done' ? ' ✓ 已完成' : ''}`));
+    lines.push(`◆ ${dateWithDay(t._f)} ${t.name}${t.owner ? `（${t.owner}）` : ''}${t.status === 'done' ? ' ✓ 已完成' : ''}`));
   return lines.join('\n');
 }
 
@@ -548,13 +557,15 @@ function renderGantt() {
         const st = effectiveStatus(t);
         const len = Math.round((t._f - t._s) / DAY) + 1;
         const mark = { done: '✓ ', late: '⚠ ', doing: '▶ ' }[st] || '';
+        const ms = isMilestone(t);
+        const bar = days => `<div class="g-bar ${st}" style="left:${x(t._s)}px;width:${days * DAY_W}px;background:${t._c}"
+            title="${esc(t.name)}：${t.start} → ${t.finish}（${t.duration} 天，${STATUS_LABEL[st]}）">${mark}${t.duration} 天</div>`;
         return `<div class="g-row">
           <div class="g-label" title="${esc(t.name)}（${esc(t._g)}）"><span class="dot" style="background:${t._c}"></span>${esc(t.name || '（未命名）')}</div>
-          <div class="g-track" style="width:${w}px">${isMilestone(t)
-            ? `<div class="g-ms ${st}" style="left:${x(t._s) + (DAY_W - 14) / 2}px;background:${t._c}" title="◆ ${esc(t.name)}：${t.start}（${STATUS_LABEL[st]}）"></div>
-               <div class="g-ms-label" style="left:${x(t._s) + DAY_W + 2}px">${t.start.slice(5).replace('-', '/')}</div>`
-            : `<div class="g-bar ${st}" style="left:${x(t._s)}px;width:${len * DAY_W}px;background:${t._c}"
-            title="${esc(t.name)}：${t.start} → ${t.finish}（${t.duration} 天，${STATUS_LABEL[st]}）">${mark}${t.duration} 天</div>`}</div>
+          <div class="g-track" style="width:${w}px">${ms && len > 1 ? bar(len - 1) : ''}${ms
+            ? `<div class="g-ms ${st}" style="left:${x(t._f) + (DAY_W - 14) / 2}px;background:${t._c}" title="◆ ${esc(t.name)}：${t.finish}（${STATUS_LABEL[st]}）"></div>
+               <div class="g-ms-label" style="left:${x(t._f) + DAY_W + 2}px">${t.finish.slice(5).replace('-', '/')}</div>`
+            : bar(len)}</div>
         </div>`;
       }).join('')}
     </div>`;
@@ -568,7 +579,6 @@ function render() {
   document.getElementById('projectName').value = state.name;
   document.getElementById('skipWeekends').checked = !!state.skipWeekends;
   renderTable();
-  renderStageList();
   renderStats();
   renderMilestones();
   renderGantt();
@@ -613,6 +623,67 @@ rows.addEventListener('click', e => {
 function blankTask() {
   return { id: newId(), name: '新階段', start: '', duration: 5, auto: state.tasks.length > 0, owner: '', status: 'todo' };
 }
+
+// Stage name dropdown: shows every common name on focus, filters as you type, still allows free text.
+const menu = document.createElement('ul');
+menu.id = 'stageMenu';
+menu.hidden = true;
+document.body.appendChild(menu);
+let menuInput = null, menuIdx = -1;
+
+function openMenu(input, filter = '') {
+  const f = filter.trim().toLowerCase();
+  const items = stageNames().filter(n => !f || n.toLowerCase().includes(f));
+  if (!items.length) { closeMenu(); return; }
+  menuInput = input;
+  menuIdx = -1;
+  menu.innerHTML = items.map(n => `<li data-v="${esc(n)}" class="${n === input.value ? 'cur' : ''}">${esc(n)}</li>`).join('');
+  const r = input.getBoundingClientRect();
+  menu.style.left = (r.left + window.scrollX) + 'px';
+  menu.style.top = (r.bottom + window.scrollY + 2) + 'px';
+  menu.style.minWidth = r.width + 'px';
+  menu.hidden = false;
+  menu.querySelector('.cur')?.scrollIntoView({ block: 'nearest' });
+}
+
+function closeMenu() { menu.hidden = true; menuInput = null; }
+
+function pickStage(v) {
+  const input = menuInput;
+  closeMenu();
+  if (!input) return;
+  input.value = v;
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+rows.addEventListener('focusin', e => { if (e.target.dataset.f === 'name') openMenu(e.target); });
+rows.addEventListener('click', e => { if (e.target.dataset.f === 'name' && menu.hidden) openMenu(e.target); });
+rows.addEventListener('input', e => { if (e.target.dataset.f === 'name') openMenu(e.target, e.target.value); });
+rows.addEventListener('focusout', e => { if (e.target === menuInput) closeMenu(); });
+rows.addEventListener('keydown', e => {
+  if (e.target !== menuInput || menu.hidden) return;
+  const items = [...menu.children];
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    menuIdx = (menuIdx + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+    items.forEach((li, i) => li.classList.toggle('active', i === menuIdx));
+    items[menuIdx].scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'Enter' && menuIdx >= 0) {
+    e.preventDefault();
+    pickStage(items[menuIdx].dataset.v);
+  } else if (e.key === 'Escape') {
+    closeMenu();
+  }
+});
+// mousedown (not click) so the input keeps focus until the choice is applied.
+menu.addEventListener('mousedown', e => {
+  const li = e.target.closest('li');
+  if (!li) return;
+  e.preventDefault();
+  pickStage(li.dataset.v);
+});
+window.addEventListener('resize', closeMenu);
+document.querySelector('.table-wrap').addEventListener('scroll', closeMenu);
 
 document.getElementById('addRow').onclick = () => { state.tasks.push(blankTask()); render(); };
 document.getElementById('projectName').onchange = e => { state.name = e.target.value.trim() || '我的專案'; render(); };
