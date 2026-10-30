@@ -24,6 +24,10 @@
     --hol: rgba(191, 135, 0, .16);
     --hol-legend: rgba(191, 135, 0, .5);
     --hol-text: #9a6700;
+    --leave: rgba(130, 80, 223, .28);
+    --leave-2: rgba(130, 80, 223, .12);
+    --leave-border: rgba(130, 80, 223, .6);
+    --leave-row: rgba(130, 80, 223, .05);
     --we: rgba(140, 149, 159, .14);
   }
   @media (prefers-color-scheme: dark) {
@@ -46,6 +50,10 @@
     --hol: rgba(210, 153, 34, .2);
     --hol-legend: rgba(210, 153, 34, .55);
     --hol-text: #e3b341;
+    --leave: rgba(171, 125, 248, .4);
+    --leave-2: rgba(171, 125, 248, .15);
+    --leave-border: rgba(171, 125, 248, .7);
+    --leave-row: rgba(171, 125, 248, .07);
     --we: rgba(110, 118, 129, .2);
     }
   }
@@ -68,6 +76,10 @@
     --hol: rgba(210, 153, 34, .2);
     --hol-legend: rgba(210, 153, 34, .55);
     --hol-text: #e3b341;
+    --leave: rgba(171, 125, 248, .4);
+    --leave-2: rgba(171, 125, 248, .15);
+    --leave-border: rgba(171, 125, 248, .7);
+    --leave-row: rgba(171, 125, 248, .07);
     --we: rgba(110, 118, 129, .2);
   }
 
@@ -205,6 +217,20 @@
   }
   .hol-note { font-size: 13px; color: var(--muted); margin: 10px 0 0; line-height: 1.8; }
   .hol-note b { color: var(--hol-text); font-weight: 600; }
+  .members { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; font-size: 14px; color: var(--muted); }
+  .members input {
+    font: inherit; font-size: 14px; width: 110px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 5px;
+    background: var(--input-bg); color: var(--text);
+  }
+  .leave-table { min-width: 640px; }
+  .leave-table td.days { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .g-leave {
+    position: absolute; top: 8px; height: 18px; border-radius: 4px; z-index: 1; overflow: hidden;
+    font-size: 11px; line-height: 18px; padding: 0 4px; white-space: nowrap; color: var(--text);
+    background: repeating-linear-gradient(135deg, var(--leave) 0 5px, var(--leave-2) 5px 10px);
+    border: 1px solid var(--leave-border);
+  }
+  .g-leave-row { background: var(--leave-row); --tint: var(--leave-row); }
   .note { font-size: 12px; color: var(--muted); margin-top: 2px; white-space: nowrap; cursor: help; }
   .note.warn { color: var(--s-late); }
   .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--muted); margin-top: 10px; }
@@ -273,6 +299,25 @@
 
   <section class="panel">
     <div class="ms-head">
+      <h2>團隊請假</h2>
+      <div class="toolbar">
+        <button id="exportLeave">匯出請假 JSON</button>
+        <label class="btn">匯入請假 JSON<input id="importLeave" type="file" accept=".json,application/json" hidden></label>
+      </div>
+    </div>
+    <div class="members" id="members"></div>
+    <div class="table-wrap">
+      <table class="leave-table">
+        <thead><tr><th>成員</th><th>開始日期</th><th>結束日期</th><th>請假天數</th><th>備註</th><th class="actions"></th></tr></thead>
+        <tbody id="leaves"></tbody>
+      </table>
+    </div>
+    <div style="margin-top:12px"><button class="primary" id="addLeave">＋ 新增請假</button></div>
+    <p class="hint">請假資料和專案分開儲存，換專案也會保留；用「匯出請假 JSON」可以帶到別台電腦或分享給同事。階段的「負責人」填成員名字時，若負責期間有人請假，會在完成日期下方提醒。請假天數只算工作天。</p>
+  </section>
+
+  <section class="panel">
+    <div class="ms-head">
       <h2>甘特圖</h2>
       <div class="toolbar">
         <button id="foldAll" title="每個群組只顯示里程碑">全部收合</button>
@@ -288,6 +333,7 @@
       <span class="ms-legend">◆ 里程碑</span>
       <span style="--c:var(--we)">週末</span>
       <span style="--c:var(--hol-legend)">國定假日</span>
+      <span style="--c:var(--leave-border)">請假</span>
       <span style="--c:var(--today)">今天</span>
     </div>
     <p class="hol-note" id="holNote"></p>
@@ -431,6 +477,37 @@ function save() {
 
 let state = load();
 
+// Team leave is stored apart from the project so it carries over between projects.
+const TEAM_KEY = 'team-leave-v1';
+const TEAM_SIZE = 5;
+
+function defaultTeam() {
+  return { members: Array.from({ length: TEAM_SIZE }, (_, i) => ({ id: 'm' + (i + 1), name: `成員${i + 1}` })), leaves: [] };
+}
+
+function loadTeam() {
+  try {
+    const t = JSON.parse(localStorage.getItem(TEAM_KEY));
+    if (t && Array.isArray(t.members) && Array.isArray(t.leaves)) return t;
+  } catch (e) {}
+  return defaultTeam();
+}
+
+function saveTeam() {
+  try { localStorage.setItem(TEAM_KEY, JSON.stringify(team)); } catch (e) {}
+}
+
+let team = loadTeam();
+const memberById = id => team.members.find(m => m.id === id);
+
+// Working days (no weekends or holidays) of a leave that fall inside [from, to].
+function leaveWorkdays(l, from = -Infinity, to = Infinity) {
+  if (!l.start || !l.end) return 0;
+  let n = 0;
+  for (let t = Math.max(parse(l.start), from); t <= Math.min(parse(l.end), to); t += DAY) if (!isOff(t)) n++;
+  return n;
+}
+
 // Fill in start/finish for every stage, chaining "auto" stages to the previous one.
 function schedule() {
   let prevFinish = null;
@@ -492,6 +569,12 @@ function holidayNote(t) {
       : `<div class="note warn" title="${esc(hs.join('\n'))}">⚠ 含 ${hs.length} 天國定假日</div>`;
   }
   if (outside) html += '<div class="note">超出 2026–2027，未含該年假日</div>';
+  const m = team.members.find(m => m.name && m.name === (t.owner || '').trim());
+  if (m) {
+    const ls = team.leaves.filter(l => l.member === m.id && leaveWorkdays(l, t._s, t._f) > 0);
+    const n = ls.reduce((sum, l) => sum + leaveWorkdays(l, t._s, t._f), 0);
+    if (n) html += `<div class="note warn" title="${esc(ls.map(l => `${l.start} → ${l.end} ${l.note || ''}`).join('\n'))}">⚠ ${esc(m.name)} 請假 ${n} 天</div>`;
+  }
   return html;
 }
 
@@ -526,6 +609,23 @@ function milestoneText() {
   return lines.join('\n');
 }
 
+function renderTeam() {
+  document.getElementById('members').innerHTML = '成員：' + team.members.map(m =>
+    `<input data-member="${m.id}" value="${esc(m.name)}" aria-label="成員名稱">`).join('');
+  team.leaves.sort((a, b) => (a.start || '').localeCompare(b.start || ''));
+  const body = document.getElementById('leaves');
+  if (!team.leaves.length) { body.innerHTML = '<tr><td colspan="6" class="empty">還沒有請假紀錄，按「新增請假」開始。</td></tr>'; return; }
+  body.innerHTML = team.leaves.map(l => `
+    <tr data-leave="${l.id}">
+      <td><select data-lf="member">${team.members.map(m => `<option value="${m.id}" ${l.member === m.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></td>
+      <td><input data-lf="start" type="date" value="${l.start}"></td>
+      <td><input data-lf="end" type="date" value="${l.end}"></td>
+      <td class="days">${leaveWorkdays(l)} 天</td>
+      <td><input data-lf="note" value="${esc(l.note || '')}" placeholder="例如：特休、病假、上午"></td>
+      <td class="actions"><button data-la="del" title="刪除">✕</button></td>
+    </tr>`).join('');
+}
+
 function renderStats() {
   const ts = state.tasks;
   const el = document.getElementById('stats');
@@ -546,6 +646,7 @@ function renderStats() {
   el.innerHTML = cards.map(([l, v]) => `<div class="stat"><div class="label">${l}</div><div class="value">${v}</div></div>`).join('');
 }
 
+const LEAVE_GROUP = '團隊請假';
 const DAY_W = 26; // px per day in the Gantt chart
 const WEEKDAY = '日一二三四五六';
 
@@ -646,7 +747,31 @@ function renderGantt() {
         </div>`;
         return head + row;
       }).join('')}
+      ${leaveRows()}
     </div>`;
+
+  // One row per member with leave in the chart's range, under a foldable "團隊請假" header.
+  function leaveRows() {
+    const inRange = l => l.start && l.end && parse(l.end) >= min && parse(l.start) <= max;
+    const who = team.members.filter(m => team.leaves.some(l => l.member === m.id && inRange(l)));
+    if (!who.length) return '';
+    const folded = !!(state.folded || {})[LEAVE_GROUP];
+    const total = team.leaves.filter(inRange).reduce((n, l) => n + leaveWorkdays(l, min, max), 0);
+    let html = `<div class="g-row g-group g-leave-row${folded ? ' folded' : ''}" data-group="${LEAVE_GROUP}" title="${folded ? '展開' : '收合'}：${LEAVE_GROUP}">
+      <div class="g-label"><span class="caret">▾</span>${LEAVE_GROUP}<span class="count">${who.length} 人・${total} 天</span></div>
+      <div class="g-track" style="width:${w}px"></div></div>`;
+    if (folded) return html;
+    for (const m of who) {
+      const bars = team.leaves.filter(l => l.member === m.id && inRange(l)).map(l => {
+        const a = Math.max(parse(l.start), min), b = Math.min(parse(l.end), max);
+        const span = Math.round((b - a) / DAY) + 1;
+        return `<div class="g-leave" style="left:${x(a)}px;width:${span * DAY_W}px"
+          title="${esc(m.name)} 請假：${l.start} → ${l.end}（${leaveWorkdays(l)} 個工作天）${l.note ? ' ' + esc(l.note) : ''}">${esc(l.note || '請假')}</div>`;
+      }).join('');
+      html += `<div class="g-row g-leave-row"><div class="g-label">👤 ${esc(m.name)}</div><div class="g-track" style="width:${w}px">${bars}</div></div>`;
+    }
+    return html;
+  }
 }
 
 function render() {
@@ -656,11 +781,13 @@ function render() {
     .map(([g, c]) => `<span class="ms-legend"><span class="dot" style="background:${c}"></span>${esc(g)}</span>`).join('');
   document.getElementById('projectName').value = state.name;
   document.getElementById('skipWeekends').checked = !!state.skipWeekends;
+  renderTeam();
   renderTable();
   renderStats();
   renderMilestones();
   renderGantt();
   save();
+  saveTeam();
 }
 
 // --- Events ---
@@ -771,10 +898,63 @@ document.getElementById('gantt').addEventListener('click', e => {
   render();
 });
 document.getElementById('foldAll').onclick = () => {
-  state.folded = Object.fromEntries(state.tasks.map(t => [t._g, true]));
+  // Fold stage groups only; leave rows stay visible so the overview still shows who is away.
+  state.folded = { ...Object.fromEntries(state.tasks.map(t => [t._g, true])), [LEAVE_GROUP]: !!(state.folded || {})[LEAVE_GROUP] };
   render();
 };
 document.getElementById('unfoldAll').onclick = () => { state.folded = {}; render(); };
+
+document.getElementById('members').addEventListener('change', e => {
+  const m = memberById(e.target.dataset.member);
+  if (!m) return;
+  const old = m.name, name = e.target.value.trim() || old;
+  m.name = name;
+  // Keep stage owners pointing at the renamed member.
+  state.tasks.forEach(t => { if ((t.owner || '').trim() === old) t.owner = name; });
+  render();
+});
+
+const leaves = document.getElementById('leaves');
+leaves.addEventListener('change', e => {
+  const f = e.target.dataset.lf;
+  const l = team.leaves.find(x => x.id === e.target.closest('tr')?.dataset.leave);
+  if (!f || !l) return;
+  l[f] = e.target.value;
+  if (f === 'start' && (!l.end || l.end < l.start)) l.end = l.start;
+  if (f === 'end' && l.end < l.start) l.start = l.end;
+  render();
+});
+leaves.addEventListener('click', e => {
+  if (e.target.dataset.la !== 'del') return;
+  const id = e.target.closest('tr').dataset.leave;
+  team.leaves = team.leaves.filter(l => l.id !== id);
+  render();
+});
+document.getElementById('addLeave').onclick = () => {
+  const d = fmt(todayUTC());
+  team.leaves.push({ id: newId(), member: team.members[0].id, start: d, end: d, note: '' });
+  render();
+};
+
+document.getElementById('exportLeave').onclick = () => {
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+  download(`團隊請假_${stamp}.json`, JSON.stringify({ type: 'team-leave', ...team }, null, 2), 'application/json');
+};
+document.getElementById('importLeave').onchange = async e => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    if (data.type !== 'team-leave' || !Array.isArray(data.members) || !Array.isArray(data.leaves)) throw new Error();
+    if (!confirm(`匯入後會取代目前的請假資料（${data.members.length} 位成員、${data.leaves.length} 筆請假），確定嗎？`)) return;
+    team = { members: data.members, leaves: data.leaves.map(l => ({ ...l, id: l.id || newId() })) };
+    render();
+  } catch (err) {
+    alert('檔案格式不正確，請選擇從「匯出請假 JSON」下載的檔案。');
+  }
+};
 
 document.getElementById('addRow').onclick = () => { state.tasks.push(blankTask()); render(); };
 document.getElementById('projectName').onchange = e => { state.name = e.target.value.trim() || '我的專案'; render(); };
