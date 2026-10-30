@@ -155,6 +155,21 @@
     position: absolute; top: 10px; width: 14px; height: 14px; transform: rotate(45deg); border-radius: 2px; z-index: 1;
   }
   .g-ms-label { position: absolute; top: 9px; font-size: 11px; line-height: 16px; color: var(--text); white-space: nowrap; z-index: 1; }
+  .g-bar.done, .g-ms.done { opacity: .45; }
+  .g-bar.late, .g-ms.late { outline: 2px solid var(--s-late); outline-offset: 1px; }
+  .g-label .dot, .legend .dot { display: inline-block; vertical-align: 0; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; flex: none; }
+  tbody tr td.num { box-shadow: inset 4px 0 0 var(--gc, transparent); }
+  .ms-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .ms-head h2 { margin: 0; }
+  .ms-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; }
+  .ms-item { border: 1px solid var(--border); border-left: 4px solid var(--gc); border-radius: 8px; padding: 8px 12px; }
+  .ms-item .ms-name { font-weight: 600; }
+  .ms-item .ms-name::before { content: "◆ "; color: var(--gc); }
+  .ms-item .ms-date { font-variant-numeric: tabular-nums; }
+  .ms-item .ms-when { font-size: 12px; color: var(--muted); }
+  .ms-item.done { opacity: .55; }
+  .ms-item.late .ms-when { color: var(--s-late); }
+  .ms-item.next { background: var(--row-hover); }
   .note { font-size: 12px; color: var(--muted); margin-top: 2px; white-space: nowrap; cursor: help; }
   .note.warn { color: var(--s-late); }
   .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--muted); margin-top: 10px; }
@@ -185,6 +200,14 @@
   <section class="stats" id="stats"></section>
 
   <section class="panel" style="margin-top:16px">
+    <div class="ms-head">
+      <h2>里程碑</h2>
+      <button id="copyMilestones">複製文字</button>
+    </div>
+    <ul class="ms-list" id="milestones"></ul>
+  </section>
+
+  <section class="panel">
     <h2>階段列表</h2>
     <div class="options">
       <label><input type="checkbox" id="skipWeekends"> 工期只算工作天（跳過週六、日與國定假日）</label>
@@ -217,10 +240,10 @@
     <h2>甘特圖</h2>
     <div class="gantt-wrap"><div class="gantt" id="gantt"></div></div>
     <div class="legend">
-      <span style="--c:var(--s-todo)">未開始</span>
-      <span style="--c:var(--s-doing)">進行中</span>
-      <span style="--c:var(--s-done)">已完成</span>
-      <span style="--c:var(--s-late)">已逾期</span>
+      <span id="groupLegend" class="ms-legend" style="display:contents"></span>
+      <span class="ms-legend">▶ 進行中</span>
+      <span class="ms-legend">✓ 已完成（變淡）</span>
+      <span class="ms-legend">⚠ 已逾期（紅框）</span>
       <span class="ms-legend">◆ 里程碑（1 天）</span>
       <span style="--c:var(--we)">週末</span>
       <span style="--c:var(--hol-legend)">國定假日</span>
@@ -239,6 +262,28 @@ const COMMON_STAGES = [
 ];
 // A 1-day stage is shown as a milestone.
 const isMilestone = t => t.duration === 1;
+// Vivid colours for stage groups (white text stays readable on all of them).
+const GROUP_COLORS = ['#2f6fde', '#e8590c', '#2b8a3e', '#9c36b5', '#0c8599', '#d6336c', '#f08c00', '#5f3dc4'];
+const firstWord = n => (n || '').trim().split(/\s+/)[0];
+
+// A stage's group is the first word of its name (EVT2, DVT…) when other stages share it;
+// one-off names such as "C2 Close" join the group of the stage before them.
+function assignGroups() {
+  const count = {};
+  state.tasks.forEach(t => { const w = firstWord(t.name); if (w) count[w] = (count[w] || 0) + 1; });
+  const colors = {};
+  let prev = '';
+  for (const t of state.tasks) {
+    const w = firstWord(t.name);
+    t._g = (w && count[w] > 1) || !prev ? (w || '未分組') : prev;
+    prev = t._g;
+    if (!(t._g in colors)) colors[t._g] = GROUP_COLORS[Object.keys(colors).length % GROUP_COLORS.length];
+    t._c = colors[t._g];
+  }
+  return colors;
+}
+
+const STATUS_LABEL = { todo: '未開始', doing: '進行中', done: '已完成', late: '已逾期' };
 const STATUS = { todo: '未開始', doing: '進行中', done: '已完成' };
 
 // Dates are handled as UTC midnight timestamps to avoid timezone drift.
@@ -369,8 +414,8 @@ function renderTable() {
     return;
   }
   tbody.innerHTML = state.tasks.map((t, i) => `
-    <tr data-id="${t.id}">
-      <td class="num">${i + 1}${isMilestone(t) ? '<span class="ms" title="里程碑（工期 1 天）">◆</span>' : ''}</td>
+    <tr data-id="${t.id}" style="--gc:${t._c}" title="群組：${esc(t._g)}">
+      <td class="num">${i + 1}${isMilestone(t) ? `<span class="ms" style="color:${t._c}" title="里程碑（工期 1 天）">◆</span>` : ''}</td>
       <td><input data-f="name" list="stageNames" value="${esc(t.name)}" placeholder="選擇或輸入階段"></td>
       <td><input data-f="start" type="date" value="${t.start}" ${t.auto && i > 0 ? 'disabled title="已設定接續上一階段"' : ''}></td>
       <td><input data-f="duration" type="number" min="1" step="1" value="${t.duration}"></td>
@@ -403,6 +448,37 @@ function holidayNote(t) {
   }
   if (outside) html += '<div class="note">超出 2026–2027，未含該年假日</div>';
   return html;
+}
+
+function milestoneWhen(t) {
+  if (t.status === 'done') return '已完成';
+  const d = Math.round((t._s - todayUTC()) / DAY);
+  if (d === 0) return '今天';
+  return d > 0 ? `還有 ${d} 天` : `已過 ${-d} 天，尚未完成`;
+}
+
+const dateWithDay = t => `${fmt(t)}（${WEEKDAY[new Date(t).getUTCDay()]}）`;
+
+function renderMilestones() {
+  const ms = state.tasks.filter(isMilestone);
+  const el = document.getElementById('milestones');
+  if (!ms.length) { el.innerHTML = '<li class="empty">還沒有里程碑。工期設為 1 天的階段會自動列在這裡。</li>'; return; }
+  const next = ms.find(t => t.status !== 'done' && t._s >= todayUTC());
+  el.innerHTML = ms.map(t => {
+    const cls = t.status === 'done' ? 'done' : effectiveStatus(t) === 'late' ? 'late' : t === next ? 'next' : '';
+    return `<li class="ms-item ${cls}" style="--gc:${t._c}" title="群組：${esc(t._g)}">
+      <div class="ms-name">${esc(t.name || '（未命名）')}</div>
+      <div class="ms-date">${dateWithDay(t._s)}</div>
+      <div class="ms-when">${t === next ? '下一個・' : ''}${milestoneWhen(t)}${t.owner ? '・' + esc(t.owner) : ''}</div>
+    </li>`;
+  }).join('');
+}
+
+function milestoneText() {
+  const lines = [`${state.name} 里程碑`];
+  state.tasks.filter(isMilestone).forEach(t =>
+    lines.push(`◆ ${dateWithDay(t._s)} ${t.name}${t.owner ? `（${t.owner}）` : ''}${t.status === 'done' ? ' ✓ 已完成' : ''}`));
+  return lines.join('\n');
 }
 
 function renderStats() {
@@ -471,13 +547,14 @@ function renderGantt() {
       ${ts.map(t => {
         const st = effectiveStatus(t);
         const len = Math.round((t._f - t._s) / DAY) + 1;
+        const mark = { done: '✓ ', late: '⚠ ', doing: '▶ ' }[st] || '';
         return `<div class="g-row">
-          <div class="g-label" title="${esc(t.name)}">${esc(t.name || '（未命名）')}</div>
+          <div class="g-label" title="${esc(t.name)}（${esc(t._g)}）"><span class="dot" style="background:${t._c}"></span>${esc(t.name || '（未命名）')}</div>
           <div class="g-track" style="width:${w}px">${isMilestone(t)
-            ? `<div class="g-ms" style="left:${x(t._s) + (DAY_W - 14) / 2}px;background:var(--s-${st})" title="◆ ${esc(t.name)}：${t.start}"></div>
+            ? `<div class="g-ms ${st}" style="left:${x(t._s) + (DAY_W - 14) / 2}px;background:${t._c}" title="◆ ${esc(t.name)}：${t.start}（${STATUS_LABEL[st]}）"></div>
                <div class="g-ms-label" style="left:${x(t._s) + DAY_W + 2}px">${t.start.slice(5).replace('-', '/')}</div>`
-            : `<div class="g-bar" style="left:${x(t._s)}px;width:${len * DAY_W}px;background:var(--s-${st})"
-            title="${esc(t.name)}：${t.start} → ${t.finish}（${t.duration} 天）">${t.duration} 天</div>`}</div>
+            : `<div class="g-bar ${st}" style="left:${x(t._s)}px;width:${len * DAY_W}px;background:${t._c}"
+            title="${esc(t.name)}：${t.start} → ${t.finish}（${t.duration} 天，${STATUS_LABEL[st]}）">${mark}${t.duration} 天</div>`}</div>
         </div>`;
       }).join('')}
     </div>`;
@@ -485,11 +562,15 @@ function renderGantt() {
 
 function render() {
   schedule();
+  const groups = assignGroups();
+  document.getElementById('groupLegend').innerHTML = Object.entries(groups)
+    .map(([g, c]) => `<span class="ms-legend"><span class="dot" style="background:${c}"></span>${esc(g)}</span>`).join('');
   document.getElementById('projectName').value = state.name;
   document.getElementById('skipWeekends').checked = !!state.skipWeekends;
   renderTable();
   renderStageList();
   renderStats();
+  renderMilestones();
   renderGantt();
   save();
 }
@@ -536,6 +617,13 @@ function blankTask() {
 document.getElementById('addRow').onclick = () => { state.tasks.push(blankTask()); render(); };
 document.getElementById('projectName').onchange = e => { state.name = e.target.value.trim() || '我的專案'; render(); };
 document.getElementById('skipWeekends').onchange = e => { state.skipWeekends = e.target.checked; render(); };
+document.getElementById('copyMilestones').onclick = async e => {
+  const btn = e.currentTarget, text = milestoneText();
+  try { await navigator.clipboard.writeText(text); }
+  catch (err) { window.prompt('請手動複製：', text); return; }
+  btn.textContent = '已複製 ✓';
+  setTimeout(() => { btn.textContent = '複製文字'; }, 1500);
+};
 document.getElementById('print').onclick = () => window.print();
 document.getElementById('reset').onclick = () => {
   if (confirm('確定要清空並回到範例資料嗎？建議先「備份 JSON」。')) { state = defaultState(); render(); }
@@ -568,7 +656,7 @@ document.getElementById('exportCsv').onclick = () => {
 };
 
 document.getElementById('exportJson').onclick = () => {
-  const data = { ...state, tasks: state.tasks.map(({ _s, _f, ...t }) => t) };
+  const data = { ...state, tasks: state.tasks.map(t => Object.fromEntries(Object.entries(t).filter(([k]) => !k.startsWith('_')))) };
   download(exportName('json'), JSON.stringify(data, null, 2), 'application/json');
 };
 
