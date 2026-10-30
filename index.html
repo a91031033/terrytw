@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>專案計畫表</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --text: #1f2328;
+    --muted: #656d76;
+    --border: #d8dee4;
+    --accent: #2f6fde;
+    --accent-text: #ffffff;
+    --row-hover: #f0f4fa;
+    --grid: #eaeef2;
+    --today: #d1242f;
+    --s-todo: #8c959f;
+    --s-doing: #2f6fde;
+    --s-done: #1a7f37;
+    --s-late: #d1242f;
+    --input-bg: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0d1117;
+      --panel: #161b22;
+      --text: #e6edf3;
+      --muted: #8d96a0;
+      --border: #30363d;
+      --accent: #4c8dff;
+      --accent-text: #ffffff;
+      --row-hover: #1c2430;
+      --grid: #21262d;
+      --today: #ff6b6b;
+      --s-todo: #6e7681;
+      --s-doing: #4c8dff;
+      --s-done: #3fb950;
+      --s-late: #ff6b6b;
+      --input-bg: #0d1117;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --text: #e6edf3;
+    --muted: #8d96a0;
+    --border: #30363d;
+    --accent: #4c8dff;
+    --accent-text: #ffffff;
+    --row-hover: #1c2430;
+    --grid: #21262d;
+    --today: #ff6b6b;
+    --s-todo: #6e7681;
+    --s-doing: #4c8dff;
+    --s-done: #3fb950;
+    --s-late: #ff6b6b;
+    --input-bg: #0d1117;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  }
+  main { max-width: 1200px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  #projectName {
+    font-size: 24px; font-weight: 700; border: 1px solid transparent; background: transparent; color: var(--text);
+    padding: 4px 8px; border-radius: 6px; min-width: 0; width: 100%; max-width: 520px;
+  }
+  #projectName:hover, #projectName:focus { border-color: var(--border); background: var(--panel); outline: none; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; }
+  button, .btn {
+    font: inherit; font-size: 14px; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); cursor: pointer;
+  }
+  button:hover, .btn:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  .panel h2 { font-size: 16px; margin: 0 0 12px; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .stat .label { color: var(--muted); font-size: 13px; }
+  .stat .value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  .options { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; color: var(--muted); font-size: 14px; margin-bottom: 12px; }
+  .options label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; min-width: 860px; }
+  th, td { padding: 6px 6px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: middle; }
+  th { font-size: 13px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+  tbody tr:hover { background: var(--row-hover); }
+  td input, td select {
+    font: inherit; font-size: 14px; width: 100%; padding: 5px 6px; border: 1px solid var(--border); border-radius: 5px;
+    background: var(--input-bg); color: var(--text);
+  }
+  td input[type="number"] { width: 72px; text-align: right; }
+  td select { min-width: 96px; }
+  td input:disabled { opacity: .6; }
+  td.num { width: 32px; color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; }
+  td.auto { text-align: center; width: 56px; }
+  td.auto input { width: auto; }
+  td.actions { white-space: nowrap; width: 1%; }
+  td.actions button { padding: 3px 7px; font-size: 13px; }
+  .hint { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
+
+  /* Gantt */
+  .gantt { position: relative; min-width: 640px; }
+  .gantt-wrap { overflow-x: auto; }
+  .g-head { position: relative; height: 26px; margin-left: 160px; border-bottom: 1px solid var(--border); }
+  .g-month { position: absolute; top: 0; height: 100%; border-left: 1px solid var(--grid); font-size: 12px; color: var(--muted); padding-left: 4px; white-space: nowrap; overflow: hidden; }
+  .g-row { display: flex; align-items: center; height: 34px; border-bottom: 1px solid var(--grid); }
+  .g-label { width: 160px; flex: none; padding-right: 8px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .g-track { position: relative; flex: 1; height: 100%; }
+  .g-bar {
+    position: absolute; top: 8px; height: 18px; border-radius: 4px; min-width: 3px;
+    color: #fff; font-size: 11px; line-height: 18px; padding: 0 6px; white-space: nowrap; overflow: hidden;
+  }
+  .g-grid { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--grid); }
+  .g-today { position: absolute; top: 0; bottom: 0; border-left: 2px dashed var(--today); z-index: 2; }
+  .g-body { position: relative; }
+  .g-lines { position: absolute; top: 0; bottom: 0; left: 160px; right: 0; pointer-events: none; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--muted); margin-top: 10px; }
+  .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; background: var(--c); vertical-align: -1px; }
+  .empty { color: var(--muted); text-align: center; padding: 24px; }
+
+  @media print {
+    .toolbar, td.actions, th.actions, .options, .hint { display: none !important; }
+    body { background: #fff; }
+    .panel { border: none; padding: 0; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <input id="projectName" aria-label="專案名稱" value="我的專案">
+    <div class="toolbar">
+      <button id="exportCsv">匯出 CSV（Excel）</button>
+      <button id="exportJson">備份 JSON</button>
+      <label class="btn">匯入 JSON<input id="importJson" type="file" accept=".json,application/json" hidden></label>
+      <button id="print">列印</button>
+      <button id="reset">清空</button>
+    </div>
+  </header>
+
+  <section class="stats" id="stats"></section>
+
+  <section class="panel" style="margin-top:16px">
+    <h2>階段列表</h2>
+    <div class="options">
+      <label><input type="checkbox" id="skipWeekends"> 工期只算工作天（跳過週六、日）</label>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>階段</th>
+            <th>開始日期</th>
+            <th>工期（天）</th>
+            <th>完成日期</th>
+            <th title="勾選後，開始日期自動接在上一階段完成之後">接續</th>
+            <th>負責人</th>
+            <th>狀態</th>
+            <th class="actions"></th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div style="margin-top:12px"><button class="primary" id="addRow">＋ 新增階段</button></div>
+    <p class="hint">修改「工期」會自動算出完成日期；修改「完成日期」會自動算出工期。勾選「接續」的階段，開始日期會自動排在上一階段完成的隔天。資料自動儲存在這台電腦的瀏覽器裡。</p>
+  </section>
+
+  <section class="panel">
+    <h2>甘特圖</h2>
+    <div class="gantt-wrap"><div class="gantt" id="gantt"></div></div>
+    <div class="legend">
+      <span style="--c:var(--s-todo)">未開始</span>
+      <span style="--c:var(--s-doing)">進行中</span>
+      <span style="--c:var(--s-done)">已完成</span>
+      <span style="--c:var(--s-late)">已逾期</span>
+      <span style="--c:var(--today)">今天</span>
+    </div>
+  </section>
+</main>
+
+<script>
+const STORAGE_KEY = 'project-plan-v1';
+const DAY = 86400000;
+const STATUS = { todo: '未開始', doing: '進行中', done: '已完成' };
+
+// Dates are handled as UTC midnight timestamps to avoid timezone drift.
+const parse = s => { const [y, m, d] = s.split('-').map(Number); return Date.UTC(y, m - 1, d); };
+const fmt = t => new Date(t).toISOString().slice(0, 10);
+const isWeekend = t => { const w = new Date(t).getUTCDay(); return w === 0 || w === 6; };
+const todayUTC = () => { const n = new Date(); return Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()); };
+
+function toWorkday(t) { while (isWeekend(t)) t += DAY; return t; }
+
+// Finish date of a stage that starts on `start` and lasts `dur` days (inclusive).
+function finishOf(start, dur, skip) {
+  if (!skip) return start + (dur - 1) * DAY;
+  let t = toWorkday(start), n = 1;
+  while (n < dur) { t += DAY; if (!isWeekend(t)) n++; }
+  return t;
+}
+
+// Number of (work)days from start to finish, inclusive.
+function durationOf(start, finish, skip) {
+  if (finish < start) return 1;
+  if (!skip) return Math.round((finish - start) / DAY) + 1;
+  let n = 0;
+  for (let t = start; t <= finish; t += DAY) if (!isWeekend(t)) n++;
+  return Math.max(1, n);
+}
+
+function nextStart(prevFinish, skip) {
+  const t = prevFinish + DAY;
+  return skip ? toWorkday(t) : t;
+}
+
+let uid = 0;
+const newId = () => 't' + Date.now().toString(36) + (uid++);
+
+function defaultState() {
+  const s = todayUTC();
+  return {
+    name: '我的專案',
+    skipWeekends: false,
+    tasks: [
+      { id: newId(), name: '需求訪談', start: fmt(s), duration: 7, auto: false, owner: '', status: 'todo' },
+      { id: newId(), name: '規劃設計', start: '', duration: 10, auto: true, owner: '', status: 'todo' },
+      { id: newId(), name: '開發執行', start: '', duration: 20, auto: true, owner: '', status: 'todo' },
+      { id: newId(), name: '測試驗收', start: '', duration: 7, auto: true, owner: '', status: 'todo' },
+      { id: newId(), name: '上線結案', start: '', duration: 3, auto: true, owner: '', status: 'todo' },
+    ],
+  };
+}
+
+function load() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) { const s = JSON.parse(raw); if (s && Array.isArray(s.tasks)) return s; }
+  } catch (e) {}
+  return defaultState();
+}
+
+function save() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+}
+
+let state = load();
+
+// Fill in start/finish for every stage, chaining "auto" stages to the previous one.
+function schedule() {
+  let prevFinish = null;
+  for (const t of state.tasks) {
+    t.duration = Math.max(1, Math.round(Number(t.duration) || 1));
+    if (t.auto && prevFinish !== null) t.start = fmt(nextStart(prevFinish, state.skipWeekends));
+    if (!t.start) t.start = fmt(prevFinish !== null ? nextStart(prevFinish, state.skipWeekends) : todayUTC());
+    let s = parse(t.start);
+    if (state.skipWeekends) { s = toWorkday(s); t.start = fmt(s); }
+    t._s = s;
+    t._f = finishOf(s, t.duration, state.skipWeekends);
+    t.finish = fmt(t._f);
+    prevFinish = t._f;
+  }
+}
+
+function effectiveStatus(t) {
+  if (t.status !== 'done' && t._f < todayUTC()) return 'late';
+  return t.status;
+}
+
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function renderTable() {
+  const tbody = document.getElementById('rows');
+  if (!state.tasks.length) {
+    tbody.innerHTML = '<tr><td colspan="9" class="empty">還沒有階段，按「新增階段」開始。</td></tr>';
+    return;
+  }
+  tbody.innerHTML = state.tasks.map((t, i) => `
+    <tr data-id="${t.id}">
+      <td class="num">${i + 1}</td>
+      <td><input data-f="name" value="${esc(t.name)}" placeholder="階段名稱"></td>
+      <td><input data-f="start" type="date" value="${t.start}" ${t.auto && i > 0 ? 'disabled title="已設定接續上一階段"' : ''}></td>
+      <td><input data-f="duration" type="number" min="1" step="1" value="${t.duration}"></td>
+      <td><input data-f="finish" type="date" value="${t.finish}"></td>
+      <td class="auto"><input data-f="auto" type="checkbox" ${t.auto ? 'checked' : ''} ${i === 0 ? 'disabled title="第一個階段沒有上一階段"' : ''}></td>
+      <td><input data-f="owner" value="${esc(t.owner || '')}" placeholder="負責人"></td>
+      <td><select data-f="status">${Object.entries(STATUS).map(([k, v]) => `<option value="${k}" ${t.status === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
+      <td class="actions">
+        <button data-a="up" title="上移" ${i === 0 ? 'disabled' : ''}>↑</button>
+        <button data-a="down" title="下移" ${i === state.tasks.length - 1 ? 'disabled' : ''}>↓</button>
+        <button data-a="insert" title="在下方插入">＋</button>
+        <button data-a="del" title="刪除">✕</button>
+      </td>
+    </tr>`).join('');
+}
+
+function renderStats() {
+  const ts = state.tasks;
+  const el = document.getElementById('stats');
+  if (!ts.length) { el.innerHTML = ''; return; }
+  const start = Math.min(...ts.map(t => t._s));
+  const end = Math.max(...ts.map(t => t._f));
+  const total = Math.round((end - start) / DAY) + 1;
+  const done = ts.filter(t => t.status === 'done').length;
+  const late = ts.filter(t => effectiveStatus(t) === 'late').length;
+  const cards = [
+    ['專案開始', fmt(start)],
+    ['專案完成', fmt(end)],
+    ['總天數', total + ' 天'],
+    ['階段數', ts.length],
+    ['已完成', `${done} / ${ts.length}`],
+    ['已逾期', late],
+  ];
+  el.innerHTML = cards.map(([l, v]) => `<div class="stat"><div class="label">${l}</div><div class="value">${v}</div></div>`).join('');
+}
+
+function renderGantt() {
+  const el = document.getElementById('gantt');
+  const ts = state.tasks;
+  if (!ts.length) { el.innerHTML = '<div class="empty">沒有資料</div>'; return; }
+  const min = Math.min(...ts.map(t => t._s));
+  const max = Math.max(...ts.map(t => t._f)) + DAY;
+  const span = max - min;
+  const pct = t => ((t - min) / span * 100).toFixed(3) + '%';
+
+  // Month boundaries for the header and grid lines.
+  const marks = [];
+  const d0 = new Date(min);
+  let m = Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth(), 1);
+  while (m < max) {
+    const d = new Date(m);
+    const next = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1);
+    const a = Math.max(m, min), b = Math.min(next, max);
+    marks.push({ left: pct(a), width: ((b - a) / span * 100).toFixed(3) + '%', label: `${d.getUTCFullYear()}/${d.getUTCMonth() + 1}`, line: m > min });
+    m = next;
+  }
+
+  const today = todayUTC();
+  const todayLine = today >= min && today < max ? `<div class="g-today" style="left:${pct(today)}" title="今天 ${fmt(today)}"></div>` : '';
+
+  el.innerHTML = `
+    <div class="g-head">${marks.map(k => `<div class="g-month" style="left:${k.left};width:${k.width}">${k.label}</div>`).join('')}</div>
+    <div class="g-body">
+      <div class="g-lines">${marks.filter(k => k.line).map(k => `<div class="g-grid" style="left:${k.left}"></div>`).join('')}${todayLine}</div>
+      ${ts.map(t => {
+        const st = effectiveStatus(t);
+        const days = Math.round((t._f - t._s) / DAY) + 1;
+        return `<div class="g-row">
+          <div class="g-label" title="${esc(t.name)}">${esc(t.name || '（未命名）')}</div>
+          <div class="g-track"><div class="g-bar" style="left:${pct(t._s)};width:${(days * DAY / span * 100).toFixed(3)}%;background:var(--s-${st})"
+            title="${esc(t.name)}：${t.start} → ${t.finish}（${t.duration} 天）">${t.duration} 天</div></div>
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+function render() {
+  schedule();
+  document.getElementById('projectName').value = state.name;
+  document.getElementById('skipWeekends').checked = !!state.skipWeekends;
+  renderTable();
+  renderStats();
+  renderGantt();
+  save();
+}
+
+// --- Events ---
+const rows = document.getElementById('rows');
+
+rows.addEventListener('change', e => {
+  const f = e.target.dataset.f;
+  const tr = e.target.closest('tr');
+  if (!f || !tr) return;
+  const t = state.tasks.find(x => x.id === tr.dataset.id);
+  if (!t) return;
+  const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+  if (f === 'finish') {
+    if (v) t.duration = durationOf(parse(t.start), parse(v), state.skipWeekends);
+  } else if (f === 'start') {
+    if (v) t.start = v;
+  } else if (f === 'duration') {
+    t.duration = Math.max(1, parseInt(v, 10) || 1);
+  } else {
+    t[f] = v;
+  }
+  render();
+});
+
+rows.addEventListener('click', e => {
+  const a = e.target.dataset.a;
+  const tr = e.target.closest('tr');
+  if (!a || !tr) return;
+  const i = state.tasks.findIndex(x => x.id === tr.dataset.id);
+  const ts = state.tasks;
+  if (a === 'up' && i > 0) [ts[i - 1], ts[i]] = [ts[i], ts[i - 1]];
+  if (a === 'down' && i < ts.length - 1) [ts[i + 1], ts[i]] = [ts[i], ts[i + 1]];
+  if (a === 'insert') ts.splice(i + 1, 0, blankTask());
+  if (a === 'del' && confirm(`刪除「${ts[i].name || '未命名'}」？`)) ts.splice(i, 1);
+  render();
+});
+
+function blankTask() {
+  return { id: newId(), name: '新階段', start: '', duration: 5, auto: state.tasks.length > 0, owner: '', status: 'todo' };
+}
+
+document.getElementById('addRow').onclick = () => { state.tasks.push(blankTask()); render(); };
+document.getElementById('projectName').onchange = e => { state.name = e.target.value.trim() || '我的專案'; render(); };
+document.getElementById('skipWeekends').onchange = e => { state.skipWeekends = e.target.checked; render(); };
+document.getElementById('print').onclick = () => window.print();
+document.getElementById('reset').onclick = () => {
+  if (confirm('確定要清空並回到範例資料嗎？建議先「備份 JSON」。')) { state = defaultState(); render(); }
+};
+
+function download(name, text, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+document.getElementById('exportCsv').onclick = () => {
+  const q = v => `"${String(v).replace(/"/g, '""')}"`;
+  const lines = [['#', '階段', '開始日期', '工期（天）', '完成日期', '負責人', '狀態'].map(q).join(',')];
+  state.tasks.forEach((t, i) => lines.push([i + 1, t.name, t.start, t.duration, t.finish, t.owner || '', STATUS[t.status]].map(q).join(',')));
+  // BOM so Excel opens the Chinese text correctly.
+  download(`${state.name}.csv`, '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
+};
+
+document.getElementById('exportJson').onclick = () => {
+  const data = { ...state, tasks: state.tasks.map(({ _s, _f, ...t }) => t) };
+  download(`${state.name}.json`, JSON.stringify(data, null, 2), 'application/json');
+};
+
+document.getElementById('importJson').onchange = async e => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    if (!data || !Array.isArray(data.tasks)) throw new Error();
+    data.tasks.forEach(t => { t.id = t.id || newId(); t.status = STATUS[t.status] ? t.status : 'todo'; });
+    state = data;
+    render();
+  } catch (err) {
+    alert('檔案格式不正確，請選擇從這裡匯出的 JSON 備份。');
+  }
+};
+
+render();
+</script>
+</body>
+</html>
