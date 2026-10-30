@@ -115,7 +115,8 @@
   td input[type="number"] { width: 72px; text-align: right; }
   td select { min-width: 96px; }
   td input:disabled { opacity: .6; }
-  td.num { width: 32px; color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; }
+  td.num .ms { color: var(--accent); margin-left: 2px; }
+  td.num { width: 40px; white-space: nowrap; color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; }
   td.auto { text-align: center; width: 56px; }
   td.auto input { width: auto; }
   td.actions { white-space: nowrap; width: 1%; }
@@ -150,9 +151,14 @@
     position: absolute; top: 8px; height: 18px; border-radius: 4px; min-width: 3px; z-index: 1;
     color: #fff; font-size: 11px; line-height: 18px; padding: 0 6px; white-space: nowrap; overflow: hidden;
   }
+  .g-ms {
+    position: absolute; top: 10px; width: 14px; height: 14px; transform: rotate(45deg); border-radius: 2px; z-index: 1;
+  }
+  .g-ms-label { position: absolute; top: 9px; font-size: 11px; line-height: 16px; color: var(--text); white-space: nowrap; z-index: 1; }
   .note { font-size: 12px; color: var(--muted); margin-top: 2px; white-space: nowrap; cursor: help; }
   .note.warn { color: var(--s-late); }
   .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--muted); margin-top: 10px; }
+  .legend span.ms-legend::before { display: none; }
   .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; background: var(--c); vertical-align: -1px; }
   .empty { color: var(--muted); text-align: center; padding: 24px; }
 
@@ -201,6 +207,7 @@
         </thead>
         <tbody id="rows"></tbody>
       </table>
+      <datalist id="stageNames"></datalist>
     </div>
     <div style="margin-top:12px"><button class="primary" id="addRow">＋ 新增階段</button></div>
     <p class="hint">修改「工期」會自動算出完成日期；修改「完成日期」會自動算出工期。勾選「接續」的階段，開始日期會自動排在上一階段完成的隔天。資料自動儲存在這台電腦的瀏覽器裡。</p>
@@ -214,6 +221,7 @@
       <span style="--c:var(--s-doing)">進行中</span>
       <span style="--c:var(--s-done)">已完成</span>
       <span style="--c:var(--s-late)">已逾期</span>
+      <span class="ms-legend">◆ 里程碑（1 天）</span>
       <span style="--c:var(--we)">週末</span>
       <span style="--c:var(--hol-legend)">國定假日</span>
       <span style="--c:var(--today)">今天</span>
@@ -224,6 +232,13 @@
 <script>
 const STORAGE_KEY = 'project-plan-v1';
 const DAY = 86400000;
+// Common stage names offered in the 階段 dropdown; names already used in the plan are added too.
+const COMMON_STAGES = [
+  'EVT2 layout', 'EVT2 GBO', 'EVT2 PCB Fab', 'EVT2 SMT', 'EVT2 MFG', 'EVT2 PCBA Ready', 'EVT2 Validation', 'C2 Close', 'EVT2 LAB pre-test',
+  'DVT Schematic', 'DVT layout', 'DVT GBO', 'DVT PCB Fab', 'DVT SMT', 'DVT MFG', 'DVT PCBA Ready', 'DVT Validation', 'C3 Close', 'DVT LAB pre-test',
+];
+// A 1-day stage is shown as a milestone.
+const isMilestone = t => t.duration === 1;
 const STATUS = { todo: '未開始', doing: '進行中', done: '已完成' };
 
 // Dates are handled as UTC midnight timestamps to avoid timezone drift.
@@ -355,8 +370,8 @@ function renderTable() {
   }
   tbody.innerHTML = state.tasks.map((t, i) => `
     <tr data-id="${t.id}">
-      <td class="num">${i + 1}</td>
-      <td><input data-f="name" value="${esc(t.name)}" placeholder="階段名稱"></td>
+      <td class="num">${i + 1}${isMilestone(t) ? '<span class="ms" title="里程碑（工期 1 天）">◆</span>' : ''}</td>
+      <td><input data-f="name" list="stageNames" value="${esc(t.name)}" placeholder="選擇或輸入階段"></td>
       <td><input data-f="start" type="date" value="${t.start}" ${t.auto && i > 0 ? 'disabled title="已設定接續上一階段"' : ''}></td>
       <td><input data-f="duration" type="number" min="1" step="1" value="${t.duration}"></td>
       <td><input data-f="finish" type="date" value="${t.finish}">${holidayNote(t)}</td>
@@ -370,6 +385,11 @@ function renderTable() {
         <button data-a="del" title="刪除">✕</button>
       </td>
     </tr>`).join('');
+}
+
+function renderStageList() {
+  const names = [...new Set([...COMMON_STAGES, ...state.tasks.map(t => t.name).filter(Boolean)])];
+  document.getElementById('stageNames').innerHTML = names.map(n => `<option value="${esc(n)}">`).join('');
 }
 
 function holidayNote(t) {
@@ -453,8 +473,11 @@ function renderGantt() {
         const len = Math.round((t._f - t._s) / DAY) + 1;
         return `<div class="g-row">
           <div class="g-label" title="${esc(t.name)}">${esc(t.name || '（未命名）')}</div>
-          <div class="g-track" style="width:${w}px"><div class="g-bar" style="left:${x(t._s)}px;width:${len * DAY_W}px;background:var(--s-${st})"
-            title="${esc(t.name)}：${t.start} → ${t.finish}（${t.duration} 天）">${t.duration} 天</div></div>
+          <div class="g-track" style="width:${w}px">${isMilestone(t)
+            ? `<div class="g-ms" style="left:${x(t._s) + (DAY_W - 14) / 2}px;background:var(--s-${st})" title="◆ ${esc(t.name)}：${t.start}"></div>
+               <div class="g-ms-label" style="left:${x(t._s) + DAY_W + 2}px">${t.start.slice(5).replace('-', '/')}</div>`
+            : `<div class="g-bar" style="left:${x(t._s)}px;width:${len * DAY_W}px;background:var(--s-${st})"
+            title="${esc(t.name)}：${t.start} → ${t.finish}（${t.duration} 天）">${t.duration} 天</div>`}</div>
         </div>`;
       }).join('')}
     </div>`;
@@ -465,6 +488,7 @@ function render() {
   document.getElementById('projectName').value = state.name;
   document.getElementById('skipWeekends').checked = !!state.skipWeekends;
   renderTable();
+  renderStageList();
   renderStats();
   renderGantt();
   save();
@@ -537,8 +561,8 @@ function download(name, text, type) {
 
 document.getElementById('exportCsv').onclick = () => {
   const q = v => `"${String(v).replace(/"/g, '""')}"`;
-  const lines = [['#', '階段', '開始日期', '工期（天）', '完成日期', '負責人', '狀態'].map(q).join(',')];
-  state.tasks.forEach((t, i) => lines.push([i + 1, t.name, t.start, t.duration, t.finish, t.owner || '', STATUS[t.status]].map(q).join(',')));
+  const lines = [['#', '階段', '開始日期', '工期（天）', '完成日期', '里程碑', '負責人', '狀態'].map(q).join(',')];
+  state.tasks.forEach((t, i) => lines.push([i + 1, t.name, t.start, t.duration, t.finish, isMilestone(t) ? '◆' : '', t.owner || '', STATUS[t.status]].map(q).join(',')));
   // BOM so Excel opens the Chinese text correctly.
   download(exportName('csv'), '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
 };
