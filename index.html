@@ -107,7 +107,8 @@
   table { width: 100%; border-collapse: collapse; min-width: 860px; }
   th, td { padding: 6px 6px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: middle; }
   th { font-size: 13px; color: var(--muted); font-weight: 600; white-space: nowrap; }
-  tbody tr:hover { background: var(--row-hover); }
+  tbody tr { background: var(--tint, transparent); }
+  tbody tr:hover { background: var(--tint-hover, var(--row-hover)); }
   td input, td select {
     font: inherit; font-size: 14px; width: 100%; padding: 5px 6px; border: 1px solid var(--border); border-radius: 5px;
     background: var(--input-bg); color: var(--text);
@@ -128,7 +129,7 @@
   .gantt { position: relative; min-width: 100%; }
   .g-head, .g-row { display: flex; }
   .g-label, .g-corner {
-    width: 160px; flex: none; position: sticky; left: 0; z-index: 3; background: var(--panel);
+    width: 160px; flex: none; position: sticky; left: 0; z-index: 3; background: linear-gradient(var(--tint, transparent), var(--tint, transparent)), var(--panel);
     padding-right: 8px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .g-months { position: relative; height: 22px; }
@@ -161,15 +162,22 @@
   tbody tr td.num { box-shadow: inset 4px 0 0 var(--gc, transparent); }
   .ms-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
   .ms-head h2 { margin: 0; }
-  .ms-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; }
-  .ms-item { border: 1px solid var(--border); border-left: 4px solid var(--gc); border-radius: 8px; padding: 8px 12px; }
+  .ms-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border); }
+  .ms-item {
+    display: grid; grid-template-columns: 170px 1fr auto; gap: 4px 16px; align-items: center;
+    padding: 7px 12px; border-bottom: 1px solid var(--border); background: var(--tint); box-shadow: inset 4px 0 0 var(--gc);
+  }
+  .ms-item .ms-date { font-variant-numeric: tabular-nums; white-space: nowrap; }
   .ms-item .ms-name { font-weight: 600; }
   .ms-item .ms-name::before { content: "◆ "; color: var(--gc); }
-  .ms-item .ms-date { font-variant-numeric: tabular-nums; }
-  .ms-item .ms-when { font-size: 12px; color: var(--muted); }
+  .ms-item .ms-when { font-size: 13px; color: var(--muted); text-align: right; }
   .ms-item.done { opacity: .55; }
   .ms-item.late .ms-when { color: var(--s-late); }
-  .ms-item.next { background: var(--row-hover); }
+  .ms-item.next .ms-when { color: var(--accent); font-weight: 600; }
+  @media (max-width: 560px) {
+    .ms-item { grid-template-columns: 1fr auto; }
+    .ms-item .ms-name { grid-column: 1 / -1; }
+  }
   td input[data-f="name"] {
     padding-right: 22px; cursor: pointer;
     background: var(--input-bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238c959f'/%3E%3C/svg%3E") no-repeat right 8px center;
@@ -294,6 +302,11 @@ function assignGroups() {
   return colors;
 }
 
+// Light wash of a group colour for row backgrounds; works on light and dark panels.
+const tint = (c, a = 0.1) => {
+  const n = parseInt(c.slice(1), 16);
+  return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+};
 const STATUS_LABEL = { todo: '未開始', doing: '進行中', done: '已完成', late: '已逾期' };
 const STATUS = { todo: '未開始', doing: '進行中', done: '已完成' };
 
@@ -425,7 +438,7 @@ function renderTable() {
     return;
   }
   tbody.innerHTML = state.tasks.map((t, i) => `
-    <tr data-id="${t.id}" style="--gc:${t._c}" title="群組：${esc(t._g)}">
+    <tr data-id="${t.id}" style="--gc:${t._c};--tint:${tint(t._c)};--tint-hover:${tint(t._c, 0.18)}" title="群組：${esc(t._g)}">
       <td class="num">${i + 1}${isMilestone(t) ? `<span class="ms" style="color:${t._c}" title="里程碑">◆</span>` : ''}</td>
       <td><input data-f="name" value="${esc(t.name)}" placeholder="選擇或輸入階段" autocomplete="off"></td>
       <td><input data-f="start" type="date" value="${t.start}" ${t.auto && i > 0 ? 'disabled title="已設定接續上一階段"' : ''}></td>
@@ -475,9 +488,9 @@ function renderMilestones() {
   const next = ms.find(t => t.status !== 'done' && t._f >= todayUTC());
   el.innerHTML = ms.map(t => {
     const cls = t.status === 'done' ? 'done' : effectiveStatus(t) === 'late' ? 'late' : t === next ? 'next' : '';
-    return `<li class="ms-item ${cls}" style="--gc:${t._c}" title="群組：${esc(t._g)}">
-      <div class="ms-name">${esc(t.name || '（未命名）')}</div>
+    return `<li class="ms-item ${cls}" style="--gc:${t._c};--tint:${tint(t._c)}" title="群組：${esc(t._g)}">
       <div class="ms-date">${dateWithDay(t._f)}</div>
+      <div class="ms-name">${esc(t.name || '（未命名）')}</div>
       <div class="ms-when">${t === next ? '下一個・' : ''}${milestoneWhen(t)}${t.owner ? '・' + esc(t.owner) : ''}</div>
     </li>`;
   }).join('');
@@ -560,7 +573,7 @@ function renderGantt() {
         const ms = isMilestone(t);
         const bar = days => `<div class="g-bar ${st}" style="left:${x(t._s)}px;width:${days * DAY_W}px;background:${t._c}"
             title="${esc(t.name)}：${t.start} → ${t.finish}（${t.duration} 天，${STATUS_LABEL[st]}）">${mark}${t.duration} 天</div>`;
-        return `<div class="g-row">
+        return `<div class="g-row" style="background:${tint(t._c)};--tint:${tint(t._c)}">
           <div class="g-label" title="${esc(t.name)}（${esc(t._g)}）"><span class="dot" style="background:${t._c}"></span>${esc(t.name || '（未命名）')}</div>
           <div class="g-track" style="width:${w}px">${ms && len > 1 ? bar(len - 1) : ''}${ms
             ? `<div class="g-ms ${st}" style="left:${x(t._f) + (DAY_W - 14) / 2}px;background:${t._c}" title="◆ ${esc(t.name)}：${t.finish}（${STATUS_LABEL[st]}）"></div>
