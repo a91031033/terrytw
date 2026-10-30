@@ -223,7 +223,6 @@
     background: var(--input-bg); color: var(--text);
   }
   .leave-table { min-width: 640px; }
-  .leave-table td.days { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .g-leave {
     position: absolute; top: 8px; height: 18px; border-radius: 4px; z-index: 1; overflow: hidden;
     font-size: 11px; line-height: 18px; padding: 0 4px; white-space: nowrap; color: var(--text);
@@ -308,12 +307,12 @@
     <div class="members" id="members"></div>
     <div class="table-wrap">
       <table class="leave-table">
-        <thead><tr><th>成員</th><th>開始日期</th><th>結束日期</th><th>請假天數</th><th>備註</th><th class="actions"></th></tr></thead>
+        <thead><tr><th>成員</th><th>開始日期</th><th>請假天數（工作天）</th><th>結束日期</th><th>備註</th><th class="actions"></th></tr></thead>
         <tbody id="leaves"></tbody>
       </table>
     </div>
     <div style="margin-top:12px"><button class="primary" id="addLeave">＋ 新增請假</button></div>
-    <p class="hint">請假資料和專案分開儲存，換專案也會保留；用「匯出請假 JSON」可以帶到別台電腦或分享給同事。階段的「負責人」填成員名字時，若負責期間有人請假，會在完成日期下方提醒。請假天數只算工作天。</p>
+    <p class="hint">請假資料和專案分開儲存，換專案也會保留；用「匯出請假 JSON」可以帶到別台電腦或分享給同事。階段的「負責人」填成員名字時，若負責期間有人請假，會在完成日期下方提醒。改「請假天數」會自動算出結束日期，改「結束日期」會自動算出天數，天數只算工作天（跳過週末和國定假日）。</p>
   </section>
 
   <section class="panel">
@@ -619,8 +618,8 @@ function renderTeam() {
     <tr data-leave="${l.id}">
       <td><select data-lf="member">${team.members.map(m => `<option value="${m.id}" ${l.member === m.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></td>
       <td><input data-lf="start" type="date" value="${l.start}"></td>
+      <td><input data-lf="days" type="number" min="1" step="1" value="${leaveWorkdays(l) || 1}"></td>
       <td><input data-lf="end" type="date" value="${l.end}"></td>
-      <td class="days">${leaveWorkdays(l)} 天</td>
       <td><input data-lf="note" value="${esc(l.note || '')}" placeholder="例如：特休、病假、上午"></td>
       <td class="actions"><button data-la="del" title="刪除">✕</button></td>
     </tr>`).join('');
@@ -919,9 +918,23 @@ leaves.addEventListener('change', e => {
   const f = e.target.dataset.lf;
   const l = team.leaves.find(x => x.id === e.target.closest('tr')?.dataset.leave);
   if (!f || !l) return;
-  l[f] = e.target.value;
-  if (f === 'start' && (!l.end || l.end < l.start)) l.end = l.start;
-  if (f === 'end' && l.end < l.start) l.start = l.end;
+  const v = e.target.value;
+  // Same rules as the stage table: changing the start or the day count moves the end date
+  // (counting working days only); changing the end date recalculates the day count.
+  if (f === 'days') {
+    l.end = fmt(finishOf(parse(l.start), Math.max(1, parseInt(v, 10) || 1), true));
+  } else if (f === 'start') {
+    if (!v) return;
+    const n = Math.max(1, leaveWorkdays(l));
+    l.start = v;
+    l.end = fmt(finishOf(parse(v), n, true));
+  } else if (f === 'end') {
+    if (!v) return;
+    l.end = v;
+    if (l.end < l.start) l.start = l.end;
+  } else {
+    l[f] = v;
+  }
   render();
 });
 leaves.addEventListener('click', e => {
