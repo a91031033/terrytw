@@ -230,6 +230,18 @@
     border: 1px solid var(--leave-border);
   }
   .g-leave-row { background: var(--leave-row); --tint: var(--leave-row); }
+  .lock-btn { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+  .lock-btn svg { width: 16px; height: 16px; flex: none; }
+  .lock-btn.unlocked { color: var(--s-done); border-color: var(--s-done); }
+  .lock-btn.locked { color: var(--hol-text); background: var(--hol); border-color: var(--hol-legend); }
+  .panel.locked td.actions, .panel.locked th.actions, .panel.locked #addRow, .panel.locked #addLeave, .panel.locked #importLeaveBtn { display: none; }
+  .panel.locked td input:disabled, .panel.locked td select:disabled, .panel.locked .members input:disabled {
+    opacity: 1; color: var(--text); background: transparent; border-color: transparent; cursor: default;
+  }
+  .panel.locked td input[data-f="name"] { background-image: none; }
+  .panel.locked input::placeholder { color: transparent; }
+  .panel.locked select:disabled { appearance: none; -webkit-appearance: none; }
+  .panel.locked input[type="checkbox"]:disabled { opacity: .7; }
   .note { font-size: 12px; color: var(--muted); margin-top: 2px; white-space: nowrap; cursor: help; }
   .note.warn { color: var(--s-late); }
   .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--muted); margin-top: 10px; }
@@ -267,8 +279,11 @@
     <ul class="ms-list" id="milestones"></ul>
   </section>
 
-  <section class="panel">
-    <h2>階段列表</h2>
+  <section class="panel" id="stagesPanel">
+    <div class="ms-head">
+      <h2>階段列表</h2>
+      <button class="lock-btn" data-lock="stages"></button>
+    </div>
     <div class="options">
       <label><input type="checkbox" id="skipWeekends"> 工期只算工作天（跳過週六、日與國定假日）</label>
       <span>國定假日依人事行政總處 2026、2027 年辦公日曆表</span>
@@ -296,12 +311,13 @@
     <p class="hint">修改「工期」會自動算出完成日期；修改「完成日期」會自動算出工期。勾選「接續」的階段，開始日期會自動排在上一階段完成的隔天。資料自動儲存在這台電腦的瀏覽器裡。</p>
   </section>
 
-  <section class="panel">
+  <section class="panel" id="teamPanel">
     <div class="ms-head">
       <h2>團隊請假</h2>
       <div class="toolbar">
+        <button class="lock-btn" data-lock="team"></button>
         <button id="exportLeave">匯出請假 JSON</button>
-        <label class="btn">匯入請假 JSON<input id="importLeave" type="file" accept=".json,application/json" hidden></label>
+        <label class="btn" id="importLeaveBtn">匯入請假 JSON<input id="importLeave" type="file" accept=".json,application/json" hidden></label>
       </div>
     </div>
     <div class="members" id="members"></div>
@@ -475,6 +491,38 @@ function save() {
 }
 
 let state = load();
+
+// Edit locks for the stage table and the team leave table (a per-browser view setting, not exported).
+const LOCK_KEY = 'ui-locks-v1';
+let locks = {};
+try { locks = JSON.parse(localStorage.getItem(LOCK_KEY)) || {}; } catch (e) {}
+const LOCK_PANELS = { stages: 'stagesPanel', team: 'teamPanel' };
+const ICON_LOCKED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+const ICON_UNLOCKED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.8-1.2"/></svg>';
+
+// Disable every field in locked panels; render() rebuilds the tables, so unlocking restores them.
+function applyLocks() {
+  for (const [key, id] of Object.entries(LOCK_PANELS)) {
+    const on = !!locks[key];
+    const panel = document.getElementById(id);
+    panel.classList.toggle('locked', on);
+    const btn = panel.querySelector('.lock-btn');
+    btn.className = 'lock-btn ' + (on ? 'locked' : 'unlocked');
+    btn.innerHTML = on ? `${ICON_LOCKED}已鎖定` : `${ICON_UNLOCKED}編輯中`;
+    btn.title = on ? '已鎖定，點一下解鎖後才能修改' : '可以修改，點一下鎖定以免不小心改到';
+    if (on) panel.querySelectorAll('tbody input, tbody select, .members input').forEach(el => { el.disabled = true; });
+    // Static controls are not rebuilt by render(), so set them both ways.
+    panel.querySelectorAll('.options input').forEach(el => { el.disabled = on; });
+  }
+}
+
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.lock-btn');
+  if (!btn) return;
+  locks[btn.dataset.lock] = !locks[btn.dataset.lock];
+  try { localStorage.setItem(LOCK_KEY, JSON.stringify(locks)); } catch (err) {}
+  render();
+});
 
 // Team leave is stored apart from the project so it carries over between projects.
 const TEAM_KEY = 'team-leave-v1';
@@ -785,6 +833,7 @@ function render() {
   renderStats();
   renderMilestones();
   renderGantt();
+  applyLocks();
   save();
   saveTeam();
 }
