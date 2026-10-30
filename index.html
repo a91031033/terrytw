@@ -23,6 +23,8 @@
     --input-bg: #ffffff;
     --hol: rgba(191, 135, 0, .16);
     --hol-legend: rgba(191, 135, 0, .5);
+    --hol-text: #9a6700;
+    --we: rgba(140, 149, 159, .14);
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -43,6 +45,8 @@
       --input-bg: #0d1117;
     --hol: rgba(210, 153, 34, .2);
     --hol-legend: rgba(210, 153, 34, .55);
+    --hol-text: #e3b341;
+    --we: rgba(110, 118, 129, .2);
     }
   }
   :root[data-theme="dark"] {
@@ -63,6 +67,8 @@
     --input-bg: #0d1117;
     --hol: rgba(210, 153, 34, .2);
     --hol-legend: rgba(210, 153, 34, .55);
+    --hol-text: #e3b341;
+    --we: rgba(110, 118, 129, .2);
   }
 
   * { box-sizing: border-box; }
@@ -117,24 +123,35 @@
   .hint { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
 
   /* Gantt */
-  .gantt { position: relative; min-width: 640px; }
   .gantt-wrap { overflow-x: auto; }
-  .g-head { position: relative; height: 26px; margin-left: 160px; border-bottom: 1px solid var(--border); }
-  .g-month { position: absolute; top: 0; height: 100%; border-left: 1px solid var(--grid); font-size: 12px; color: var(--muted); padding-left: 4px; white-space: nowrap; overflow: hidden; }
-  .g-row { display: flex; align-items: center; height: 34px; border-bottom: 1px solid var(--grid); }
-  .g-label { width: 160px; flex: none; padding-right: 8px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .g-track { position: relative; flex: 1; height: 100%; }
+  .gantt { position: relative; min-width: 100%; }
+  .g-head, .g-row { display: flex; }
+  .g-label, .g-corner {
+    width: 160px; flex: none; position: sticky; left: 0; z-index: 3; background: var(--panel);
+    padding-right: 8px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .g-months { position: relative; height: 22px; }
+  .g-month { position: absolute; top: 0; height: 100%; border-left: 1px solid var(--border); font-size: 12px; color: var(--muted); padding-left: 4px; white-space: nowrap; overflow: hidden; }
+  .g-days { display: flex; border-bottom: 1px solid var(--border); }
+  .g-day { width: var(--dw); flex: none; text-align: center; font-size: 10px; line-height: 1.3; padding: 2px 0; color: var(--muted); }
+  .g-day b { display: block; font-size: 12px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+  .g-day.we, .g-col.we { background: var(--we); }
+  .g-day.hol, .g-col.hol { background: var(--hol); }
+  .g-day.hol, .g-day.hol b { color: var(--hol-text); }
+  .g-day.today b { color: var(--today); }
+  .g-body { position: relative; }
+  .g-cols { position: absolute; top: 0; bottom: 0; left: 160px; }
+  .g-col { position: absolute; top: 0; bottom: 0; width: var(--dw); }
+  .g-today { position: absolute; top: 0; bottom: 0; border-left: 2px dashed var(--today); z-index: 2; }
+  .g-row { align-items: center; height: 34px; border-bottom: 1px solid var(--grid); position: relative; }
+  .g-row .g-label { display: flex; align-items: center; height: 100%; }
+  .g-track { position: relative; flex: none; height: 100%; }
   .g-bar {
-    position: absolute; top: 8px; height: 18px; border-radius: 4px; min-width: 3px;
+    position: absolute; top: 8px; height: 18px; border-radius: 4px; min-width: 3px; z-index: 1;
     color: #fff; font-size: 11px; line-height: 18px; padding: 0 6px; white-space: nowrap; overflow: hidden;
   }
-  .g-grid { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--grid); }
-  .g-hol { position: absolute; top: 0; bottom: 0; min-width: 2px; background: var(--hol); pointer-events: auto; }
   .note { font-size: 12px; color: var(--muted); margin-top: 2px; white-space: nowrap; cursor: help; }
   .note.warn { color: var(--s-late); }
-  .g-today { position: absolute; top: 0; bottom: 0; border-left: 2px dashed var(--today); z-index: 2; }
-  .g-body { position: relative; }
-  .g-lines { position: absolute; top: 0; bottom: 0; left: 160px; right: 0; pointer-events: none; }
   .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--muted); margin-top: 10px; }
   .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; background: var(--c); vertical-align: -1px; }
   .empty { color: var(--muted); text-align: center; padding: 24px; }
@@ -197,7 +214,8 @@
       <span style="--c:var(--s-doing)">進行中</span>
       <span style="--c:var(--s-done)">已完成</span>
       <span style="--c:var(--s-late)">已逾期</span>
-      <span style="--c:var(--hol-legend)">國定假日（平日）</span>
+      <span style="--c:var(--we)">週末</span>
+      <span style="--c:var(--hol-legend)">國定假日</span>
       <span style="--c:var(--today)">今天</span>
     </div>
   </section>
@@ -387,43 +405,55 @@ function renderStats() {
   el.innerHTML = cards.map(([l, v]) => `<div class="stat"><div class="label">${l}</div><div class="value">${v}</div></div>`).join('');
 }
 
+const DAY_W = 26; // px per day in the Gantt chart
+const WEEKDAY = '日一二三四五六';
+
 function renderGantt() {
   const el = document.getElementById('gantt');
   const ts = state.tasks;
   if (!ts.length) { el.innerHTML = '<div class="empty">沒有資料</div>'; return; }
   const min = Math.min(...ts.map(t => t._s));
-  const max = Math.max(...ts.map(t => t._f)) + DAY;
-  const span = max - min;
-  const pct = t => ((t - min) / span * 100).toFixed(3) + '%';
+  const max = Math.max(...ts.map(t => t._f));
+  const n = Math.round((max - min) / DAY) + 1;
+  const x = t => Math.round((t - min) / DAY) * DAY_W;
+  const today = todayUTC();
 
-  // Month boundaries for the header and grid lines.
-  const marks = [];
-  const d0 = new Date(min);
-  let m = Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth(), 1);
-  while (m < max) {
-    const d = new Date(m);
-    const next = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1);
-    const a = Math.max(m, min), b = Math.min(next, max);
-    marks.push({ left: pct(a), width: ((b - a) / span * 100).toFixed(3) + '%', label: `${d.getUTCFullYear()}/${d.getUTCMonth() + 1}`, line: m > min });
-    m = next;
+  const days = [];
+  for (let i = 0; i < n; i++) {
+    const t = min + i * DAY, d = new Date(t), hol = holidayOf(t), we = isWeekend(t);
+    days.push({ t, d, hol, kind: hol && !we ? 'hol' : we ? 'we' : '' });
   }
 
-  const hols = Object.keys(HOLIDAYS).map(parse).filter(h => h >= min && h < max);
-  const holBands = hols.map(h => `<div class="g-hol" style="left:${pct(h)};width:${(DAY / span * 100).toFixed(3)}%" title="${fmt(h)} ${HOLIDAYS[fmt(h)]}"></div>`).join('');
+  // Month labels across the top.
+  const months = [];
+  days.forEach((k, i) => {
+    if (i === 0 || k.d.getUTCDate() === 1) months.push({ i, label: `${k.d.getUTCFullYear()}/${k.d.getUTCMonth() + 1}` });
+  });
+  const monthHtml = months.map((m, j) => {
+    const end = j + 1 < months.length ? months[j + 1].i : n;
+    return `<div class="g-month" style="left:${m.i * DAY_W}px;width:${(end - m.i) * DAY_W}px">${m.label}</div>`;
+  }).join('');
 
-  const today = todayUTC();
-  const todayLine = today >= min && today < max ? `<div class="g-today" style="left:${pct(today)}" title="今天 ${fmt(today)}"></div>` : '';
+  const dayTitle = k => `${fmt(k.t)}（${WEEKDAY[k.d.getUTCDay()]}）${k.hol ? ' ' + k.hol : ''}`;
+  const dayHtml = days.map(k =>
+    `<div class="g-day ${k.kind}${k.t === today ? ' today' : ''}" title="${dayTitle(k)}"><b>${k.d.getUTCDate()}</b>${WEEKDAY[k.d.getUTCDay()]}</div>`).join('');
+  const colHtml = days.map((k, i) => k.kind ? `<div class="g-col ${k.kind}" style="left:${i * DAY_W}px"></div>` : '').join('');
+  const todayLine = today >= min && today <= max ? `<div class="g-today" style="left:${x(today)}px" title="今天 ${fmt(today)}"></div>` : '';
+  const w = n * DAY_W;
 
+  el.style.setProperty('--dw', DAY_W + 'px');
+  el.style.width = (160 + w) + 'px';
   el.innerHTML = `
-    <div class="g-head">${marks.map(k => `<div class="g-month" style="left:${k.left};width:${k.width}">${k.label}</div>`).join('')}</div>
+    <div class="g-head"><div class="g-corner"></div><div class="g-months" style="width:${w}px">${monthHtml}</div></div>
+    <div class="g-head"><div class="g-corner"></div><div class="g-days">${dayHtml}</div></div>
     <div class="g-body">
-      <div class="g-lines">${marks.filter(k => k.line).map(k => `<div class="g-grid" style="left:${k.left}"></div>`).join('')}${holBands}${todayLine}</div>
+      <div class="g-cols" style="width:${w}px">${colHtml}${todayLine}</div>
       ${ts.map(t => {
         const st = effectiveStatus(t);
-        const days = Math.round((t._f - t._s) / DAY) + 1;
+        const len = Math.round((t._f - t._s) / DAY) + 1;
         return `<div class="g-row">
           <div class="g-label" title="${esc(t.name)}">${esc(t.name || '（未命名）')}</div>
-          <div class="g-track"><div class="g-bar" style="left:${pct(t._s)};width:${(days * DAY / span * 100).toFixed(3)}%;background:var(--s-${st})"
+          <div class="g-track" style="width:${w}px"><div class="g-bar" style="left:${x(t._s)}px;width:${len * DAY_W}px;background:var(--s-${st})"
             title="${esc(t.name)}：${t.start} → ${t.finish}（${t.duration} 天）">${t.duration} 天</div></div>
         </div>`;
       }).join('')}
@@ -487,11 +517,21 @@ document.getElementById('reset').onclick = () => {
   if (confirm('確定要清空並回到範例資料嗎？建議先「備份 JSON」。')) { state = defaultState(); render(); }
 };
 
+// e.g. 我的專案_20261030-1415.json, in the viewer's local time.
+function exportName(ext) {
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+  const name = state.name.replace(/[\\/:*?"<>|]/g, '_');
+  return `${name}_${stamp}.${ext}`;
+}
+
 function download(name, text, type) {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([text], { type }));
   a.download = name;
+  document.body.appendChild(a);
   a.click();
+  a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
@@ -500,12 +540,12 @@ document.getElementById('exportCsv').onclick = () => {
   const lines = [['#', '階段', '開始日期', '工期（天）', '完成日期', '負責人', '狀態'].map(q).join(',')];
   state.tasks.forEach((t, i) => lines.push([i + 1, t.name, t.start, t.duration, t.finish, t.owner || '', STATUS[t.status]].map(q).join(',')));
   // BOM so Excel opens the Chinese text correctly.
-  download(`${state.name}.csv`, '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
+  download(exportName('csv'), '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
 };
 
 document.getElementById('exportJson').onclick = () => {
   const data = { ...state, tasks: state.tasks.map(({ _s, _f, ...t }) => t) };
-  download(`${state.name}.json`, JSON.stringify(data, null, 2), 'application/json');
+  download(exportName('json'), JSON.stringify(data, null, 2), 'application/json');
 };
 
 document.getElementById('importJson').onchange = async e => {
