@@ -189,6 +189,13 @@
   #stageMenu li { padding: 6px 12px; cursor: pointer; white-space: nowrap; }
   #stageMenu li:hover, #stageMenu li.active { background: var(--row-hover); }
   #stageMenu li.cur { font-weight: 600; color: var(--accent); }
+  .g-group { height: 30px; border-bottom: 1px solid var(--border); cursor: pointer; user-select: none; }
+  .g-group .g-label { font-weight: 700; gap: 6px; }
+  .g-group .caret { display: inline-block; width: 12px; color: var(--muted); transition: transform .15s; }
+  .g-group.folded .caret { transform: rotate(-90deg); }
+  .g-group .count { font-weight: 400; color: var(--muted); font-size: 12px; }
+  .g-span { position: absolute; top: 11px; height: 8px; border-radius: 4px; opacity: .35; }
+  .g-group:hover .g-label { color: var(--accent); }
   .note { font-size: 12px; color: var(--muted); margin-top: 2px; white-space: nowrap; cursor: help; }
   .note.warn { color: var(--s-late); }
   .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--muted); margin-top: 10px; }
@@ -256,7 +263,13 @@
   </section>
 
   <section class="panel">
-    <h2>甘特圖</h2>
+    <div class="ms-head">
+      <h2>甘特圖</h2>
+      <div class="toolbar">
+        <button id="foldAll" title="每個群組只顯示里程碑">全部收合</button>
+        <button id="unfoldAll">全部展開</button>
+      </div>
+    </div>
     <div class="gantt-wrap"><div class="gantt" id="gantt"></div></div>
     <div class="legend">
       <span id="groupLegend" class="ms-legend" style="display:contents"></span>
@@ -566,20 +579,38 @@ function renderGantt() {
     <div class="g-head"><div class="g-corner"></div><div class="g-days">${dayHtml}</div></div>
     <div class="g-body">
       <div class="g-cols" style="width:${w}px">${colHtml}${todayLine}</div>
-      ${ts.map(t => {
+      ${ts.map((t, i) => {
+        let head = '';
+        if (i === 0 || ts[i - 1]._g !== t._g) {
+          // Header for a run of stages in the same group, with a bar spanning the run.
+          let j = i;
+          while (j + 1 < ts.length && ts[j + 1]._g === t._g) j++;
+          const run = ts.slice(i, j + 1);
+          const a = Math.min(...run.map(r => r._s)), b = Math.max(...run.map(r => r._f));
+          const folded = !!(state.folded || {})[t._g];
+          const nMs = run.filter(isMilestone).length;
+          head = `<div class="g-row g-group${folded ? ' folded' : ''}" data-group="${esc(t._g)}" style="background:${tint(t._c, 0.18)};--tint:${tint(t._c, 0.18)}"
+              title="${folded ? '展開' : '收合（只顯示里程碑）'}：${esc(t._g)}">
+            <div class="g-label"><span class="caret">▾</span>${esc(t._g)}<span class="count">${folded ? `里程碑 ${nMs} / ${run.length}` : `${run.length} 個階段`}</span></div>
+            <div class="g-track" style="width:${w}px"><div class="g-span" style="left:${x(a)}px;width:${(Math.round((b - a) / DAY) + 1) * DAY_W}px;background:${t._c}"
+              title="${esc(t._g)}：${fmt(a)} → ${fmt(b)}"></div></div>
+          </div>`;
+        }
+        if ((state.folded || {})[t._g] && !isMilestone(t)) return head;
         const st = effectiveStatus(t);
         const len = Math.round((t._f - t._s) / DAY) + 1;
         const mark = { done: '✓ ', late: '⚠ ', doing: '▶ ' }[st] || '';
         const ms = isMilestone(t);
         const bar = days => `<div class="g-bar ${st}" style="left:${x(t._s)}px;width:${days * DAY_W}px;background:${t._c}"
             title="${esc(t.name)}：${t.start} → ${t.finish}（${t.duration} 天，${STATUS_LABEL[st]}）">${mark}${t.duration} 天</div>`;
-        return `<div class="g-row" style="background:${tint(t._c)};--tint:${tint(t._c)}">
+        const row = `<div class="g-row" style="background:${tint(t._c)};--tint:${tint(t._c)}">
           <div class="g-label" title="${esc(t.name)}（${esc(t._g)}）"><span class="dot" style="background:${t._c}"></span>${esc(t.name || '（未命名）')}</div>
           <div class="g-track" style="width:${w}px">${ms && len > 1 ? bar(len - 1) : ''}${ms
             ? `<div class="g-ms ${st}" style="left:${x(t._f) + (DAY_W - 14) / 2}px;background:${t._c}" title="◆ ${esc(t.name)}：${t.finish}（${STATUS_LABEL[st]}）"></div>
                <div class="g-ms-label" style="left:${x(t._f) + DAY_W + 2}px">${t.finish.slice(5).replace('-', '/')}</div>`
             : bar(len)}</div>
         </div>`;
+        return head + row;
       }).join('')}
     </div>`;
 }
@@ -697,6 +728,19 @@ menu.addEventListener('mousedown', e => {
 });
 window.addEventListener('resize', closeMenu);
 document.querySelector('.table-wrap').addEventListener('scroll', closeMenu);
+
+document.getElementById('gantt').addEventListener('click', e => {
+  const head = e.target.closest('.g-group');
+  if (!head) return;
+  const g = head.dataset.group;
+  state.folded = { ...(state.folded || {}), [g]: !(state.folded || {})[g] };
+  render();
+});
+document.getElementById('foldAll').onclick = () => {
+  state.folded = Object.fromEntries(state.tasks.map(t => [t._g, true]));
+  render();
+};
+document.getElementById('unfoldAll').onclick = () => { state.folded = {}; render(); };
 
 document.getElementById('addRow').onclick = () => { state.tasks.push(blankTask()); render(); };
 document.getElementById('projectName').onchange = e => { state.name = e.target.value.trim() || '我的專案'; render(); };
