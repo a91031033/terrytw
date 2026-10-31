@@ -92,6 +92,11 @@
   }
   main { max-width: 1200px; margin: 0 auto; padding: 24px 16px 48px; }
   header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .proj-bar { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--muted); font-size: 14px; }
+  .proj-bar select {
+    font: inherit; font-size: 15px; font-weight: 600; padding: 6px 10px; min-width: 200px; max-width: 100%;
+    border: 1px solid var(--accent); border-radius: 6px; background: var(--panel); color: var(--text);
+  }
   #projectName {
     font-size: 24px; font-weight: 700; border: 1px solid transparent; background: transparent; color: var(--text);
     padding: 4px 8px; border-radius: 6px; min-width: 0; width: 100%; max-width: 520px;
@@ -261,14 +266,22 @@
 <body>
 <main>
   <header>
-    <input id="projectName" aria-label="專案名稱" value="我的專案">
+    <div class="proj-bar">
+      <label for="projectSelect">專案</label>
+      <select id="projectSelect" aria-label="切換專案"></select>
+      <button id="newProject" title="建立一個新的空白專案">＋ 新增專案</button>
+      <button id="copyProject" title="複製目前的專案，可以當作新專案的範本">複製</button>
+      <button id="deleteProject" title="刪除目前的專案">刪除</button>
+    </div>
+    <input id="projectName" aria-label="專案名稱（可直接修改）" value="我的專案" title="點一下可以修改專案名稱">
     <div class="toolbar">
       <button id="exportCsv">匯出 CSV（Excel）</button>
       <button id="exportHtml" title="匯出一個唯讀的網頁檔，可以直接用瀏覽器打開或寄給別人">匯出 HTML</button>
-      <button id="exportJson">備份 JSON</button>
-      <label class="btn">匯入 JSON<input id="importJson" type="file" accept=".json,application/json" hidden></label>
+      <button id="exportJson" title="備份目前的專案">備份 JSON</button>
+      <button id="exportAll" title="把所有專案存成一個檔案">全部專案備份</button>
+      <label class="btn" title="可匯入單一專案或全部專案的備份檔，會加入專案清單，不會覆蓋其他專案">匯入 JSON<input id="importJson" type="file" accept=".json,application/json" hidden></label>
       <button id="print">列印</button>
-      <button id="reset">清空</button>
+      <button id="reset" title="把目前的專案清空成範例資料">清空</button>
     </div>
   </header>
 
@@ -357,7 +370,7 @@
     <p class="hol-note" id="holNote"></p>
   </section>
   <footer class="app-footer">
-    專案計畫表 V1.0（2026-10-31）・<a href="https://github.com/a91031033/terrytw/blob/main/CHANGELOG.md" target="_blank" rel="noopener">修訂紀錄</a>
+    專案計畫表 V1.1（2026-10-31）・<a href="https://github.com/a91031033/terrytw/blob/main/CHANGELOG.md" target="_blank" rel="noopener">修訂紀錄</a>
   </footer>
 </main>
 
@@ -484,16 +497,72 @@ function defaultState() {
   };
 }
 
-function load() {
+// All projects live in one store: { current: id, projects: { id: project } }.
+// V1.0 kept a single project under STORAGE_KEY; it becomes the first project here.
+const STORE_KEY = 'project-plans-v2';
+
+function loadStore() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) { const s = JSON.parse(raw); if (s && Array.isArray(s.tasks)) return s; }
+    const st = JSON.parse(localStorage.getItem(STORE_KEY));
+    if (st && st.projects && Object.keys(st.projects).length) {
+      if (!st.projects[st.current]) st.current = Object.keys(st.projects)[0];
+      return st;
+    }
   } catch (e) {}
-  return defaultState();
+  let first = null;
+  try {
+    const old = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    if (old && Array.isArray(old.tasks)) first = old;
+  } catch (e) {}
+  const id = newId();
+  return { current: id, projects: { [id]: first || defaultState() } };
 }
 
+let store = loadStore();
+
+function load() { return store.projects[store.current]; }
+
 function save() {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+  store.projects[store.current] = state;
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(store, (k, v) => (k.startsWith('_') ? undefined : v))); } catch (e) {}
+}
+
+// Project data without the computed fields (_s, _f, _g, _c).
+const cleanProject = p => ({ ...p, tasks: p.tasks.map(t => Object.fromEntries(Object.entries(t).filter(([k]) => !k.startsWith('_')))) });
+
+function switchProject(id) {
+  if (!store.projects[id]) return;
+  save();
+  store.current = id;
+  state = store.projects[id];
+  closeMenu();
+  render();
+}
+
+function addProject(p) {
+  const id = newId();
+  store.projects[id] = p;
+  switchProject(id);
+}
+
+function uniqueName(name) {
+  const names = Object.values(store.projects).map(p => p.name);
+  if (!names.includes(name)) return name;
+  let i = 2;
+  while (names.includes(`${name} (${i})`)) i++;
+  return `${name} (${i})`;
+}
+
+function normalizeProject(p) {
+  p.tasks.forEach(t => { t.id = t.id || newId(); t.status = STATUS[t.status] ? t.status : 'todo'; });
+  p.name = (p.name || '未命名專案').trim();
+  return p;
+}
+
+function renderProjectSelect() {
+  const sel = document.getElementById('projectSelect');
+  const ids = Object.keys(store.projects).sort((a, b) => store.projects[a].name.localeCompare(store.projects[b].name, 'zh-Hant'));
+  sel.innerHTML = ids.map(id => `<option value="${id}" ${id === store.current ? 'selected' : ''}>${esc(store.projects[id].name)}</option>`).join('');
 }
 
 let state = load();
@@ -834,6 +903,7 @@ function render() {
     .map(([g, c]) => `<span class="ms-legend"><span class="dot" style="background:${c}"></span>${esc(g)}</span>`).join('');
   document.getElementById('projectName').value = state.name;
   document.getElementById('skipWeekends').checked = !!state.skipWeekends;
+  renderProjectSelect();
   renderTeam();
   renderTable();
   renderStats();
@@ -1025,7 +1095,13 @@ document.getElementById('importLeave').onchange = async e => {
 };
 
 document.getElementById('addRow').onclick = () => { state.tasks.push(blankTask()); render(); };
-document.getElementById('projectName').onchange = e => { state.name = e.target.value.trim() || '我的專案'; render(); };
+document.getElementById('projectName').onchange = e => {
+  const name = e.target.value.trim();
+  const taken = Object.entries(store.projects).some(([id, p]) => id !== store.current && p.name === name);
+  if (name && taken) alert(`已經有名為「${name}」的專案，請換一個名稱。`);
+  else if (name) state.name = name;
+  render();
+};
 document.getElementById('skipWeekends').onchange = e => { state.skipWeekends = e.target.checked; render(); };
 document.getElementById('copyMilestones').onclick = async e => {
   const btn = e.currentTarget, text = milestoneText();
@@ -1036,7 +1112,37 @@ document.getElementById('copyMilestones').onclick = async e => {
 };
 document.getElementById('print').onclick = () => window.print();
 document.getElementById('reset').onclick = () => {
-  if (confirm('確定要清空並回到範例資料嗎？建議先「備份 JSON」。')) { state = defaultState(); render(); }
+  if (confirm(`確定要把「${state.name}」清空並回到範例資料嗎？其他專案不受影響。建議先「備份 JSON」。`)) {
+    state = { ...defaultState(), name: state.name };
+    render();
+  }
+};
+
+document.getElementById('projectSelect').onchange = e => switchProject(e.target.value);
+document.getElementById('newProject').onclick = () => {
+  const name = prompt('新專案名稱：', '');
+  if (name === null) return;
+  addProject({ ...defaultState(), name: uniqueName(name.trim() || '新專案') });
+};
+document.getElementById('copyProject').onclick = () => {
+  const name = prompt('複製成新專案，名稱：', `${state.name} 複本`);
+  if (name === null) return;
+  const copy = JSON.parse(JSON.stringify(cleanProject(state)));
+  copy.tasks.forEach(t => { t.id = newId(); });
+  addProject({ ...copy, name: uniqueName(name.trim() || `${state.name} 複本`) });
+};
+document.getElementById('deleteProject').onclick = () => {
+  if (!confirm(`確定要刪除專案「${state.name}」嗎？刪除後無法復原，建議先「備份 JSON」。`)) return;
+  delete store.projects[store.current];
+  const left = Object.keys(store.projects);
+  if (!left.length) {
+    const id = newId();
+    store.projects[id] = defaultState();
+    left.push(id);
+  }
+  store.current = left[0];
+  state = store.projects[store.current];
+  render();
 };
 
 // e.g. 我的專案_20261030-1415.json, in the viewer's local time.
@@ -1111,8 +1217,15 @@ document.getElementById('exportHtml').onclick = () => {
 };
 
 document.getElementById('exportJson').onclick = () => {
-  const data = { ...state, tasks: state.tasks.map(t => Object.fromEntries(Object.entries(t).filter(([k]) => !k.startsWith('_')))) };
-  download(exportName('json'), JSON.stringify(data, null, 2), 'application/json');
+  download(exportName('json'), JSON.stringify(cleanProject(state), null, 2), 'application/json');
+};
+
+document.getElementById('exportAll').onclick = () => {
+  save();
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+  const data = { type: 'project-plans-all', projects: Object.values(store.projects).map(cleanProject) };
+  download(`全部專案_${stamp}.json`, JSON.stringify(data, null, 2), 'application/json');
 };
 
 document.getElementById('importJson').onchange = async e => {
@@ -1121,12 +1234,31 @@ document.getElementById('importJson').onchange = async e => {
   if (!file) return;
   try {
     const data = JSON.parse(await file.text());
-    if (!data || !Array.isArray(data.tasks)) throw new Error();
-    data.tasks.forEach(t => { t.id = t.id || newId(); t.status = STATUS[t.status] ? t.status : 'todo'; });
-    state = data;
+    const list = data && data.type === 'project-plans-all' ? data.projects : [data];
+    if (!Array.isArray(list) || !list.length || !list.every(p => p && Array.isArray(p.tasks))) throw new Error();
+    save();
+    let lastId = null, replaced = 0, added = 0;
+    for (const raw of list) {
+      const p = normalizeProject(raw);
+      // Same name: ask whether to overwrite that project or keep both.
+      const same = Object.keys(store.projects).find(id => store.projects[id].name === p.name);
+      if (same && confirm(`已經有專案「${p.name}」。\n按「確定」用匯入的資料覆蓋它；按「取消」另存成新專案。`)) {
+        store.projects[same] = p;
+        lastId = same;
+        replaced++;
+      } else {
+        if (same) p.name = uniqueName(p.name);
+        lastId = newId();
+        store.projects[lastId] = p;
+        added++;
+      }
+    }
+    store.current = lastId;
+    state = store.projects[lastId];
     render();
+    if (list.length > 1) alert(`已匯入 ${list.length} 個專案（新增 ${added} 個、覆蓋 ${replaced} 個）。`);
   } catch (err) {
-    alert('檔案格式不正確，請選擇從這裡匯出的 JSON 備份。');
+    alert('檔案格式不正確，請選擇從這裡匯出的專案 JSON 備份。');
   }
 };
 
